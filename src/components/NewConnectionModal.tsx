@@ -58,30 +58,29 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
                   <Select
                     style={{ width: '100%' }}
                     options={DB_OPTIONS}
-                    placeholder="Select database type"
                     popupMatchSelectWidth
                   />
                 </div>
                 <div style={{ ...styles.field, width: 90 }}>
                   <label style={styles.label}>Port</label>
-                  <Input placeholder="5432" />
+                  <Input />
                 </div>
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Host</label>
-                <Input placeholder="localhost" />
+                <Input />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Database Name</label>
-                <Input placeholder="my_database" />
+                <Input />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Username</label>
-                <Input placeholder="user" />
+                <Input />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Password</label>
-                <Input.Password placeholder="password" />
+                <Input.Password />
               </div>
             </div>
           </div>
@@ -101,7 +100,6 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
               <div style={styles.field}>
                 <label style={styles.label}>Connection String</label>
                 <Input.TextArea
-                  placeholder="jdbc:postgresql://localhost:5432/mydb"
                   autoSize={{ minRows: 3, maxRows: 6 }}
                   style={{ fontFamily: 'monospace', fontSize: 12, resize: 'none' }}
                 />
