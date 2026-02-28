@@ -2,14 +2,54 @@ import { useState } from 'react';
 import { Modal, Radio, Select, Input, Button, ConfigProvider } from 'antd';
 import { ApiOutlined, LinkOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
+import PostgresIcon from '../assets/db/postgresql_icon.svg?react';
+import MySQLIcon from '../assets/db/mysql_icon.svg?react';
+import OracleIcon from '../assets/db/oracle_icon.svg?react';
+import MSSQLIcon from '../assets/db/microsoftsql_icon.svg?react';
 
 type ConnectionMode = 'form' | 'string';
 
+const dbOptionStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+};
+
+const dbIconStyle: CSSProperties = {
+  width: 16,
+  height: 16,
+  flexShrink: 0,
+  overflow: 'hidden',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+function DbIcon({ icon: Icon }: { icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }) {
+  return (
+    <span style={dbIconStyle}>
+      <Icon width={16} height={16} />
+    </span>
+  );
+}
+
 const DB_OPTIONS = [
-  { value: 'mssql', label: 'Microsoft SQL Server' },
-  { value: 'mysql', label: 'MySQL' },
-  { value: 'oracle', label: 'Oracle' },
-  { value: 'postgres', label: 'PostgreSQL' },
+  {
+    value: 'mssql',
+    label: <span style={dbOptionStyle}><DbIcon icon={MSSQLIcon} />Microsoft SQL Server</span>,
+  },
+  {
+    value: 'mysql',
+    label: <span style={dbOptionStyle}><DbIcon icon={MySQLIcon} />MySQL</span>,
+  },
+  {
+    value: 'oracle',
+    label: <span style={dbOptionStyle}><DbIcon icon={OracleIcon} />Oracle</span>,
+  },
+  {
+    value: 'postgres',
+    label: <span style={dbOptionStyle}><DbIcon icon={PostgresIcon} />PostgreSQL</span>,
+  },
 ];
 
 interface NewConnectionModalProps {
