@@ -37,7 +37,7 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
       <ConfigProvider theme={{
         components: {
           Input:  { hoverBorderColor: '#424242', activeShadow: 'none' },
-          Select: { hoverBorderColor: '#424242', activeShadow: 'none' },
+          Select: { hoverBorderColor: '#424242', activeOutlineColor: 'transparent' },
         },
       }}>
         <div style={styles.body}>
