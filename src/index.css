@@ -9,6 +9,11 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
+/* ── Radio ── */
+.ant-radio-wrapper:hover .ant-radio:not(.ant-radio-checked) {
+  border-color: white;
+}
+
 /* ── Scrollbars ── */
 ::-webkit-scrollbar {
   width: 6px;
