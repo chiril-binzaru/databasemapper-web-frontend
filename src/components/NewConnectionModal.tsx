@@ -10,9 +10,10 @@ import MSSQLIcon from '../assets/db/microsoftsql_icon.svg?react';
 type ConnectionMode = 'form' | 'string';
 
 const dbOptionStyle: CSSProperties = {
-  display: 'inline-flex',
+  display: 'flex',
   alignItems: 'center',
   gap: 8,
+  overflow: 'hidden',
 };
 
 const dbIconStyle: CSSProperties = {
@@ -34,22 +35,10 @@ function DbIcon({ icon: Icon }: { icon: React.ComponentType<React.SVGProps<SVGSV
 }
 
 const DB_OPTIONS = [
-  {
-    value: 'mssql',
-    label: <span style={dbOptionStyle}><DbIcon icon={MSSQLIcon} />Microsoft SQL Server</span>,
-  },
-  {
-    value: 'mysql',
-    label: <span style={dbOptionStyle}><DbIcon icon={MySQLIcon} />MySQL</span>,
-  },
-  {
-    value: 'oracle',
-    label: <span style={dbOptionStyle}><DbIcon icon={OracleIcon} />Oracle</span>,
-  },
-  {
-    value: 'postgres',
-    label: <span style={dbOptionStyle}><DbIcon icon={PostgresIcon} />PostgreSQL</span>,
-  },
+  { value: 'mssql',    label: 'Microsoft SQL Server', icon: MSSQLIcon },
+  { value: 'mysql',    label: 'MySQL',                icon: MySQLIcon },
+  { value: 'oracle',   label: 'Oracle',               icon: OracleIcon },
+  { value: 'postgres', label: 'PostgreSQL',           icon: PostgresIcon },
 ];
 
 interface NewConnectionModalProps {
@@ -74,13 +63,16 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
         body: { padding: 0, overflowY: 'auto' },
       }}
     >
-      <ConfigProvider theme={{
-        components: {
-          Input:  { hoverBorderColor: '#424242', activeShadow: 'none' },
-          Select: { hoverBorderColor: '#424242', activeOutlineColor: 'transparent' },
-          Radio:  { colorBorder: 'white' },
-        },
-      }}>
+      <ConfigProvider
+        componentSize="large"
+        theme={{
+          components: {
+            Input:  { hoverBorderColor: '#424242', activeShadow: 'none' },
+            Select: { hoverBorderColor: '#424242', activeOutlineColor: 'transparent' },
+            Radio:  { colorBorder: 'white' },
+          },
+        }}
+      >
         <div style={styles.body}>
 
           {/* ── Form section ── */}
@@ -100,6 +92,22 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
                     style={{ width: '100%' }}
                     options={DB_OPTIONS}
                     popupMatchSelectWidth
+                    optionRender={(option) => (
+                      <span style={dbOptionStyle}>
+                        <DbIcon icon={(option.data as typeof DB_OPTIONS[number]).icon} />
+                        {option.label}
+                      </span>
+                    )}
+                    labelRender={(props) => {
+                      const option = DB_OPTIONS.find(o => o.value === props.value);
+                      if (!option) return <>{props.label}</>;
+                      return (
+                        <span style={dbOptionStyle}>
+                          <DbIcon icon={option.icon} />
+                          {option.label}
+                        </span>
+                      );
+                    }}
                   />
                 </div>
                 <div style={{ ...styles.field, width: 90 }}>
