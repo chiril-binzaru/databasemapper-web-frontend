@@ -38,6 +38,7 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
         components: {
           Input:  { hoverBorderColor: '#424242', activeShadow: 'none' },
           Select: { hoverBorderColor: '#424242', activeOutlineColor: 'transparent' },
+          Radio:  { colorBorder: 'white' },
         },
       }}>
         <div style={styles.body}>
