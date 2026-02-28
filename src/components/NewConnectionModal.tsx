@@ -149,8 +149,8 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
               <div style={styles.field}>
                 <label style={styles.label}>Connection String</label>
                 <Input.TextArea
-                  autoSize={{ minRows: 3, maxRows: 6 }}
-                  style={{ fontFamily: 'monospace', fontSize: 12, resize: 'none' }}
+                  rows={3}
+                  style={{ fontFamily: 'monospace', fontSize: 14, resize: 'none', overflowY: 'auto' }}
                 />
               </div>
             </div>
