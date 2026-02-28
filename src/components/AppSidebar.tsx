@@ -14,7 +14,7 @@ interface AppSidebarProps {
 const NAV_ITEMS: { key: NonNullable<PanelType>; icon: React.ReactNode; label: string }[] = [
   { key: 'mappings', icon: <NodeIndexOutlined />, label: 'Mappings' },
   { key: 'connections', icon: <DbIcon />, label: 'Connections' },
-  { key: 'swagger', icon: <SwaggerIcon width={25} height={25} />, label: 'Swagger' },
+  { key: 'swagger', icon: <SwaggerIcon width={25} height={25} />, label: 'Swaggers' },
 ];
 
 interface NavBtnProps {
