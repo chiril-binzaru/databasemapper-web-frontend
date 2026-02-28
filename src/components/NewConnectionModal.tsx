@@ -52,24 +52,24 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
               ...styles.sectionBody,
               pointerEvents: mode === 'form' ? 'auto' : 'none',
             }}>
-              <div style={styles.field}>
-                <label style={styles.label}>Database Type</label>
-                <Select
-                  style={{ width: '100%' }}
-                  options={DB_OPTIONS}
-                  placeholder="Select database type"
-                  popupMatchSelectWidth
-                />
-              </div>
               <div style={styles.row}>
                 <div style={{ ...styles.field, flex: 1 }}>
-                  <label style={styles.label}>Host</label>
-                  <Input placeholder="localhost" />
+                  <label style={styles.label}>Database Type</label>
+                  <Select
+                    style={{ width: '100%' }}
+                    options={DB_OPTIONS}
+                    placeholder="Select database type"
+                    popupMatchSelectWidth
+                  />
                 </div>
                 <div style={{ ...styles.field, width: 90 }}>
                   <label style={styles.label}>Port</label>
                   <Input placeholder="5432" />
                 </div>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.label}>Host</label>
+                <Input placeholder="localhost" />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Database Name</label>
