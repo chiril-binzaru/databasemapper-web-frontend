@@ -29,9 +29,9 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
       centered
       footer={null}
       styles={{
-        container: { padding: 0, background: '#2b2b2b', borderRadius: 8 },
-        header: { padding: '16px 48px 12px 20px', background: 'transparent', borderBottom: 'none', marginBottom: 0 },
-        body: { padding: 0 },
+        container: { padding: 0, background: '#2b2b2b', borderRadius: 8, maxHeight: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' },
+        header: { padding: '16px 48px 12px 20px', background: 'transparent', borderBottom: 'none', marginBottom: 0, flexShrink: 0 },
+        body: { padding: 0, overflowY: 'auto' },
       }}
     >
       <ConfigProvider theme={{
