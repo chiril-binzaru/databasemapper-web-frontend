@@ -4,6 +4,7 @@ import { Tooltip, Typography } from 'antd';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PanelType } from '../types/panel';
+import ConnectionsPanel from './ConnectionsPanel';
 
 interface AppSidePanelProps {
   panel: PanelType;
@@ -15,12 +16,11 @@ interface AppSidePanelProps {
 const PANEL_TITLES: Record<NonNullable<PanelType>, string> = {
   mappings: 'Mappings',
   connections: 'Connections',
-  swagger: 'Swagger',
+  swagger: 'Swaggers',
 };
 
-const PANEL_PLACEHOLDERS: Record<NonNullable<PanelType>, string> = {
+const PANEL_PLACEHOLDERS: Record<'mappings' | 'swagger', string> = {
   mappings: 'No mappings created yet',
-  connections: 'No database connections configured',
   swagger: 'No Swagger spec loaded',
 };
 
@@ -56,6 +56,19 @@ function ActionBtn({ tooltip, active, onClick, children }: ActionBtnProps) {
   );
 }
 
+function PanelContent({ panel }: { panel: NonNullable<PanelType> }) {
+  if (panel === 'connections') {
+    return <ConnectionsPanel />;
+  }
+  return (
+    <div style={styles.placeholderWrap}>
+      <Typography.Text style={styles.placeholder}>
+        {PANEL_PLACEHOLDERS[panel]}
+      </Typography.Text>
+    </div>
+  );
+}
+
 export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: AppSidePanelProps) {
   if (!panel) return null;
 
@@ -65,7 +78,7 @@ export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: Ap
         <Typography.Text style={styles.title}>{PANEL_TITLES[panel]}</Typography.Text>
         <div style={styles.actions}>
           <ActionBtn tooltip={pinned ? 'Unpin' : 'Pin'} active={pinned} onClick={onTogglePin}>
-            <PinIcon width={15} height={15} />
+            <PinIcon width={20} height={20} />
           </ActionBtn>
           <ActionBtn tooltip="Hide" onClick={onClose}>
             <MinusOutlined />
@@ -73,14 +86,14 @@ export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: Ap
         </div>
       </div>
       <div style={styles.content}>
-        <Typography.Text style={styles.placeholder}>{PANEL_PLACEHOLDERS[panel]}</Typography.Text>
+        <PanelContent panel={panel} />
       </div>
     </div>
   );
 }
 
 const base: CSSProperties = {
-  width: 300,
+  width: 576,
   background: '#1f1f1f',
   borderRight: '1px solid #2a2a2a',
   display: 'flex',
@@ -112,7 +125,7 @@ const styles: Record<string, CSSProperties> = {
     flexShrink: 0,
   },
   title: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: 600,
     color: 'rgba(255,255,255,0.75)',
   },
@@ -121,18 +134,21 @@ const styles: Record<string, CSSProperties> = {
     gap: 4,
   },
   actionBtn: {
-    width: 28,
-    height: 28,
+    width: 34,
+    height: 34,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
     borderRadius: 4,
-    fontSize: 15,
+    fontSize: 20,
     transition: 'background 0.15s, color 0.15s',
   },
   content: {
     flex: 1,
+    overflowY: 'auto',
+  },
+  placeholderWrap: {
     padding: 16,
   },
   placeholder: {
