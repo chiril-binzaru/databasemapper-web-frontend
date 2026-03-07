@@ -3,13 +3,13 @@ import { Button, Typography } from 'antd';
 import { PlusOutlined, AppstoreOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
 import NewServiceModal from './NewServiceModal';
-import type { Service } from './NewServiceModal';
+import type { ServiceResponse } from './NewServiceModal';
 
 export default function ServicesPanel() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [services, setServices] = useState<Service[]>([]);
+  const [services, setServices] = useState<ServiceResponse[]>([]);
 
-  const handleAdd = (service: Service) => {
+  const handleAdd = (service: ServiceResponse) => {
     setServices(prev => [...prev, service]);
   };
 
@@ -35,11 +35,11 @@ export default function ServicesPanel() {
         ) : (
           <div style={styles.list}>
             {services.map(service => (
-              <div key={service.id} style={styles.serviceItem}>
+              <div key={service.serviceId} style={styles.serviceItem}>
                 <AppstoreOutlined style={styles.serviceIcon} />
                 <div style={styles.serviceInfo}>
-                  <Typography.Text style={styles.serviceName}>{service.name}</Typography.Text>
-                  <Typography.Text style={styles.serviceDesc}>{service.baseUrl}</Typography.Text>
+                  <Typography.Text style={styles.serviceName}>{service.serviceName}</Typography.Text>
+                  <Typography.Text style={styles.serviceDesc}>{service.serviceBaseUrl}</Typography.Text>
                 </div>
               </div>
             ))}
