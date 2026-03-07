@@ -1,17 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button, Typography } from 'antd';
 import { PlusOutlined, AppstoreOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
 import NewServiceModal from './NewServiceModal';
-import type { ServiceResponse } from './NewServiceModal';
+import { getServices } from '../services/servicesApi';
+import type { ServiceResponse } from '../services/servicesApi';
 
 export default function ServicesPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [services, setServices] = useState<ServiceResponse[]>([]);
 
-  const handleAdd = (service: ServiceResponse) => {
-    setServices(prev => [...prev, service]);
-  };
+  const fetchServices = useCallback(async () => {
+    try {
+      const data = await getServices();
+      setServices(data);
+    } catch {
+      // silently fail — list stays empty
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchServices();
+  }, [fetchServices]);
 
   return (
     <>
@@ -50,7 +60,7 @@ export default function ServicesPanel() {
       <NewServiceModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onAdd={handleAdd}
+        onAdd={fetchServices}
       />
     </>
   );
