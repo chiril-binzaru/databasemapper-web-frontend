@@ -3,9 +3,6 @@ import { Modal, Input, Button, ConfigProvider, Dropdown } from 'antd';
 import { AppstoreAddOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
 import { createService } from '../services/servicesApi';
-import type { ServiceResponse } from '../services/servicesApi';
-
-export type { ServiceResponse };
 
 function deriveServiceName(baseUrl: string): string {
   try {
@@ -30,7 +27,7 @@ const SWAGGER_ENDPOINTS = [
 interface NewServiceModalProps {
   open: boolean;
   onClose: () => void;
-  onAdd: (service: ServiceResponse) => void;
+  onAdd: () => void;
 }
 
 export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModalProps) {
@@ -68,12 +65,12 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
     setLoading(true);
     setError(null);
     try {
-      const service = await createService({
+      await createService({
         serviceName: serviceName.trim(),
         serviceBaseUrl: baseUrl.trim(),
         swaggerEndpoint: swaggerEndpoint.trim() || undefined,
       });
-      onAdd(service);
+      onAdd();
       reset();
       onClose();
     } catch {
