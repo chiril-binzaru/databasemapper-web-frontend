@@ -2,13 +2,10 @@ import { useState } from 'react';
 import { Modal, Input, Button, ConfigProvider, Dropdown } from 'antd';
 import { AppstoreAddOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
+import { createService } from '../services/servicesApi';
+import type { ServiceResponse } from '../services/servicesApi';
 
-export interface Service {
-  id: string;
-  name: string;
-  baseUrl: string;
-  swaggerEndpoint: string;
-}
+export type { ServiceResponse };
 
 function deriveServiceName(baseUrl: string): string {
   try {
@@ -33,7 +30,7 @@ const SWAGGER_ENDPOINTS = [
 interface NewServiceModalProps {
   open: boolean;
   onClose: () => void;
-  onAdd: (service: Service) => void;
+  onAdd: (service: ServiceResponse) => void;
 }
 
 export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModalProps) {
@@ -42,6 +39,8 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
   const [serviceNameEdited, setServiceNameEdited] = useState(false);
   const [swaggerEndpoint, setSwaggerEndpoint] = useState('');
   const [swaggerDropdownOpen, setSwaggerDropdownOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleBaseUrlChange = (val: string) => {
     setBaseUrl(val);
@@ -61,18 +60,27 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
     setServiceNameEdited(false);
     setSwaggerEndpoint('');
     setSwaggerDropdownOpen(false);
+    setError(null);
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!baseUrl.trim() || !serviceName.trim()) return;
-    onAdd({
-      id: crypto.randomUUID(),
-      name: serviceName.trim(),
-      baseUrl: baseUrl.trim(),
-      swaggerEndpoint: swaggerEndpoint.trim(),
-    });
-    reset();
-    onClose();
+    setLoading(true);
+    setError(null);
+    try {
+      const service = await createService({
+        serviceName: serviceName.trim(),
+        serviceBaseUrl: baseUrl.trim(),
+        swaggerEndpoint: swaggerEndpoint.trim() || undefined,
+      });
+      onAdd(service);
+      reset();
+      onClose();
+    } catch {
+      setError('Failed to create service. Check that the server is running.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancel = () => {
@@ -82,7 +90,7 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
 
   const baseUrlTrimmed = baseUrl.trim();
   const baseUrlInvalid = !!baseUrlTrimmed && !/^https?:\/\//.test(baseUrlTrimmed);
-  const canAdd = !!baseUrlTrimmed && !baseUrlInvalid && !!serviceName.trim();
+  const canAdd = !!baseUrlTrimmed && !baseUrlInvalid && !!serviceName.trim() && !loading;
 
   const filteredEndpoints = SWAGGER_ENDPOINTS.filter(ep =>
     !swaggerEndpoint || ep.toLowerCase().includes(swaggerEndpoint.toLowerCase())
@@ -163,6 +171,8 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
               </Dropdown>
             </div>
 
+            {error && <span style={styles.errorText}>{error}</span>}
+
           </div>
 
           <div style={styles.footerSeparator} />
@@ -173,6 +183,7 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
               style={styles.btnPrimary}
               onClick={handleAdd}
               disabled={!canAdd}
+              loading={loading}
             >
               Add Service
             </Button>
@@ -180,6 +191,7 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
               type="text"
               style={styles.btnCancel}
               onClick={handleCancel}
+              disabled={loading}
             >
               Cancel
             </Button>
