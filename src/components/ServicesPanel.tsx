@@ -1,27 +1,23 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Button, Typography } from 'antd';
 import { PlusOutlined, AppstoreOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import NewServiceModal from './NewServiceModal';
 import { getServices } from '../services/servicesApi';
-import type { ServiceResponse } from '../services/servicesApi';
 
 export default function ServicesPanel() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [services, setServices] = useState<ServiceResponse[]>([]);
+  const queryClient = useQueryClient();
 
-  const fetchServices = useCallback(async () => {
-    try {
-      const data = await getServices();
-      setServices(data);
-    } catch {
-      // silently fail — list stays empty
-    }
-  }, []);
+  const { data: services = [] } = useQuery({
+    queryKey: ['services'],
+    queryFn: getServices,
+  });
 
-  useEffect(() => {
-    fetchServices();
-  }, [fetchServices]);
+  const handleAfterAdd = () => {
+    queryClient.invalidateQueries({ queryKey: ['services'] });
+  };
 
   return (
     <>
@@ -60,7 +56,7 @@ export default function ServicesPanel() {
       <NewServiceModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onAdd={fetchServices}
+        onAdd={handleAfterAdd}
       />
     </>
   );

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ConfigProvider, theme } from 'antd';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppSidebar from './components/AppSidebar';
 import AppSidePanel from './components/AppSidePanel';
 import AppHeader from './components/AppHeader';
@@ -41,11 +42,22 @@ function AppLayout() {
   );
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Data is considered fresh for 5 minutes — no refetch on panel re-open within that window
+      staleTime: 5 * 60 * 1000,
+    },
+  },
+});
+
 export default function App() {
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-      <AppLayout />
-    </ConfigProvider>
+    <QueryClientProvider client={queryClient}>
+      <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+        <AppLayout />
+      </ConfigProvider>
+    </QueryClientProvider>
   );
 }
 
