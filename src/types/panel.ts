@@ -1,1 +1,1 @@
-export type PanelType = 'mappings' | 'connections' | 'swagger' | null;
+export type PanelType = 'services' | null;

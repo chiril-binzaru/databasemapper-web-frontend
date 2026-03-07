@@ -4,7 +4,7 @@ import { Tooltip, Typography } from 'antd';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PanelType } from '../types/panel';
-import ConnectionsPanel from './ConnectionsPanel';
+import ServicesPanel from './ServicesPanel';
 
 interface AppSidePanelProps {
   panel: PanelType;
@@ -12,17 +12,6 @@ interface AppSidePanelProps {
   onClose: () => void;
   onTogglePin: () => void;
 }
-
-const PANEL_TITLES: Record<NonNullable<PanelType>, string> = {
-  mappings: 'Mappings',
-  connections: 'Connections',
-  swagger: 'Swaggers',
-};
-
-const PANEL_PLACEHOLDERS: Record<'mappings' | 'swagger', string> = {
-  mappings: 'No mappings created yet',
-  swagger: 'No Swagger spec loaded',
-};
 
 interface ActionBtnProps {
   tooltip: string;
@@ -56,26 +45,13 @@ function ActionBtn({ tooltip, active, onClick, children }: ActionBtnProps) {
   );
 }
 
-function PanelContent({ panel }: { panel: NonNullable<PanelType> }) {
-  if (panel === 'connections') {
-    return <ConnectionsPanel />;
-  }
-  return (
-    <div style={styles.placeholderWrap}>
-      <Typography.Text style={styles.placeholder}>
-        {PANEL_PLACEHOLDERS[panel]}
-      </Typography.Text>
-    </div>
-  );
-}
-
 export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: AppSidePanelProps) {
   if (!panel) return null;
 
   return (
     <div style={pinned ? styles.panelPinned : styles.panelFloat}>
       <div style={styles.header}>
-        <Typography.Text style={styles.title}>{PANEL_TITLES[panel]}</Typography.Text>
+        <Typography.Text style={styles.title}>Services</Typography.Text>
         <div style={styles.actions}>
           <ActionBtn tooltip={pinned ? 'Unpin' : 'Pin'} active={pinned} onClick={onTogglePin}>
             <PinIcon width={20} height={20} />
@@ -86,7 +62,7 @@ export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: Ap
         </div>
       </div>
       <div style={styles.content}>
-        <PanelContent panel={panel} />
+        <ServicesPanel />
       </div>
     </div>
   );
@@ -147,12 +123,5 @@ const styles: Record<string, CSSProperties> = {
   content: {
     flex: 1,
     overflowY: 'auto',
-  },
-  placeholderWrap: {
-    padding: 16,
-  },
-  placeholder: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.2)',
   },
 };

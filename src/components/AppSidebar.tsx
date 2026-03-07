@@ -1,10 +1,8 @@
 import { Tooltip } from 'antd';
-import { NodeIndexOutlined } from '@ant-design/icons';
+import { AppstoreOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PanelType } from '../types/panel';
-import DbIcon from '../assets/db_icon.svg?react';
-import SwaggerIcon from '../assets/swagger_icon.svg?react';
 
 interface AppSidebarProps {
   activePanel: PanelType;
@@ -12,9 +10,7 @@ interface AppSidebarProps {
 }
 
 const NAV_ITEMS: { key: NonNullable<PanelType>; icon: React.ReactNode; label: string }[] = [
-  { key: 'mappings', icon: <NodeIndexOutlined />, label: 'Mappings' },
-  { key: 'connections', icon: <DbIcon />, label: 'Connections' },
-  { key: 'swagger', icon: <SwaggerIcon width={25} height={25} />, label: 'Swaggers' },
+  { key: 'services', icon: <AppstoreOutlined />, label: 'Services' },
 ];
 
 interface NavBtnProps {
