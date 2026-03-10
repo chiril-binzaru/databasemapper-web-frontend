@@ -20,7 +20,7 @@ export async function getServices(): Promise<ServiceResponse[]> {
   return response.data;
 }
 
-export async function createService(data: CreateServiceRequest): Promise<ServiceResponse> {
-  const response = await apiClient.post<ServiceResponse>('/api/v1/services', data);
+export async function createService(data: CreateServiceRequest): Promise<ServiceResponse[]> {
+  const response = await apiClient.post<ServiceResponse[]>('/api/v1/services', data);
   return response.data;
 }

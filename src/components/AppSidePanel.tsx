@@ -1,10 +1,13 @@
-import { MinusOutlined } from '@ant-design/icons';
+import { MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import PinIcon from '../assets/pin_icon.svg?react';
 import { Tooltip, Typography } from 'antd';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PanelType } from '../types/panel';
 import ServicesPanel from './ServicesPanel';
+import NewServiceModal from './NewServiceModal';
+import { useQueryClient } from '@tanstack/react-query';
+import type { ServiceResponse } from '../services/servicesApi';
 
 interface AppSidePanelProps {
   panel: PanelType;
@@ -46,25 +49,39 @@ function ActionBtn({ tooltip, active, onClick, children }: ActionBtnProps) {
 }
 
 export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: AppSidePanelProps) {
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const queryClient = useQueryClient();
+
   if (!panel) return null;
 
   return (
-    <div style={pinned ? styles.panelPinned : styles.panelFloat}>
-      <div style={styles.header}>
-        <Typography.Text style={styles.title}>Services</Typography.Text>
-        <div style={styles.actions}>
-          <ActionBtn tooltip={pinned ? 'Unpin' : 'Pin'} active={pinned} onClick={onTogglePin}>
-            <PinIcon width={20} height={20} />
-          </ActionBtn>
-          <ActionBtn tooltip="Hide" onClick={onClose}>
-            <MinusOutlined />
-          </ActionBtn>
+    <>
+      <div style={pinned ? styles.panelPinned : styles.panelFloat}>
+        <div style={styles.header}>
+          <Typography.Text style={styles.title}>Services</Typography.Text>
+          <div style={styles.actions}>
+            <ActionBtn tooltip="Add Service" onClick={() => setAddModalOpen(true)}>
+              <PlusOutlined />
+            </ActionBtn>
+            <ActionBtn tooltip={pinned ? 'Unpin' : 'Pin'} active={pinned} onClick={onTogglePin}>
+              <PinIcon width={20} height={20} />
+            </ActionBtn>
+            <ActionBtn tooltip="Hide" onClick={onClose}>
+              <MinusOutlined />
+            </ActionBtn>
+          </div>
+        </div>
+        <div style={styles.content}>
+          <ServicesPanel />
         </div>
       </div>
-      <div style={styles.content}>
-        <ServicesPanel />
-      </div>
-    </div>
+
+      <NewServiceModal
+        open={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onAdd={(services) => queryClient.setQueryData(['services'], services)}
+      />
+    </>
   );
 }
 
