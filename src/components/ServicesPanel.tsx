@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Typography, Dropdown } from 'antd';
+import { Button, Typography, Dropdown, Tooltip } from 'antd';
 import {
   AppstoreOutlined,
   DatabaseOutlined,
@@ -7,17 +7,30 @@ import {
   RightOutlined,
   MoreOutlined,
   StarFilled,
+  PlusOutlined,
 } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getServices } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
+import NewEndpointModal from './NewEndpointModal';
+import type { EndpointItem } from '../services/endpointsApi';
+
+const METHOD_COLORS: Record<string, string> = {
+  GET: '#61affe',
+  POST: '#49cc90',
+  PUT: '#fca130',
+  PATCH: '#50e3c2',
+  DELETE: '#f93e3e',
+};
 
 export default function ServicesPanel() {
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
   const [dbExpanded, setDbExpanded] = useState(false);
   const [endpointsExpanded, setEndpointsExpanded] = useState(false);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
+  const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
+  const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
 
   const { data: services = [] } = useQuery({
     queryKey: ['services'],
@@ -149,10 +162,31 @@ export default function ServicesPanel() {
                 />
                 <ApiOutlined style={styles.subSectionIcon} />
                 <span style={styles.subSectionTitle}>Endpoints</span>
+                <Tooltip title="Add Endpoint" placement="bottom">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    style={styles.subSectionAddBtn}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setEndpointModalServiceId(service.serviceId);
+                    }}
+                  />
+                </Tooltip>
               </div>
               {endpointsExpanded && (
                 <div style={styles.subSectionContent}>
-                  <span style={styles.emptyHint}>No endpoint was added for this service</span>
+                  {(endpointsByService[service.serviceId] ?? []).length === 0 ? (
+                    <span style={styles.emptyHint}>No endpoint was added for this service</span>
+                  ) : (
+                    (endpointsByService[service.serviceId] ?? []).map(ep => (
+                      <div key={ep.endpointId} style={styles.endpointItem}>
+                        <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[ep.httpMethod] ?? 'rgba(255,255,255,0.5)' }}>{ep.httpMethod}</span>
+                        <span style={styles.endpointPath}>{ep.endpointPath}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -168,17 +202,31 @@ export default function ServicesPanel() {
   ];
 
   return (
-    <div style={styles.container}>
-      {services.length === 0 ? (
-        <div style={styles.empty}>
-          <span style={styles.emptyText}>No services added yet</span>
-        </div>
-      ) : (
-        <div style={styles.list}>
-          {sortedServices.map(renderServiceItem)}
-        </div>
+    <>
+      <div style={styles.container}>
+        {services.length === 0 ? (
+          <div style={styles.empty}>
+            <span style={styles.emptyText}>No services added yet</span>
+          </div>
+        ) : (
+          <div style={styles.list}>
+            {sortedServices.map(renderServiceItem)}
+          </div>
+        )}
+      </div>
+
+      {endpointModalServiceId !== null && (
+        <NewEndpointModal
+          open
+          serviceId={endpointModalServiceId}
+          onClose={() => setEndpointModalServiceId(null)}
+          onAdd={endpoints => {
+            setEndpointsByService(prev => ({ ...prev, [endpointModalServiceId]: endpoints }));
+            setEndpointModalServiceId(null);
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }
 
@@ -289,10 +337,35 @@ const styles: Record<string, CSSProperties> = {
   subSectionContent: {
     padding: '10px 16px 10px 48px',
     borderTop: '1px solid #1e1e1e',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  },
+  subSectionAddBtn: {
+    color: 'rgba(255,255,255,0.25)',
+    flexShrink: 0,
   },
   emptyHint: {
     fontSize: 11,
     color: 'rgba(255,255,255,0.2)',
     fontStyle: 'italic',
+  },
+  endpointItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '3px 0',
+  },
+  endpointMethod: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    flexShrink: 0,
+    width: 42,
+  },
+  endpointPath: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    fontFamily: 'monospace',
   },
 };
