@@ -24,3 +24,7 @@ export async function createService(data: CreateServiceRequest): Promise<Service
   const response = await apiClient.post<ServiceResponse[]>('/api/v1/services', data);
   return response.data;
 }
+
+export async function deleteService(serviceId: number): Promise<void> {
+  await apiClient.delete(`/api/v1/services/${serviceId}`);
+}

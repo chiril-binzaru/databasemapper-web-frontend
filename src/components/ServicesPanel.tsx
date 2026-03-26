@@ -10,8 +10,8 @@ import {
   PlusOutlined,
 } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getServices } from '../services/servicesApi';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getServices, deleteService } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
 import NewEndpointModal from './NewEndpointModal';
 import type { EndpointItem } from '../services/endpointsApi';
@@ -32,9 +32,18 @@ export default function ServicesPanel() {
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
 
+  const queryClient = useQueryClient();
+
   const { data: services = [] } = useQuery({
     queryKey: ['services'],
     queryFn: getServices,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteService,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['services'] });
+    },
   });
 
   const handleServiceClick = (serviceId: string) => {
@@ -73,6 +82,7 @@ export default function ServicesPanel() {
 
   const handleMenuClick = (key: string, service: ServiceResponse) => {
     if (key === 'favourite') toggleFavourite(String(service.serviceId));
+    if (key === 'delete') deleteMutation.mutate(service.serviceId);
   };
 
   const renderServiceItem = (service: ServiceResponse) => {
