@@ -9,6 +9,21 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
+/* ── Confirm Delete button ── */
+.confirm-delete-btn,
+.confirm-delete-btn:focus {
+  background-color: #c62828 !important;
+  border-color: #c62828 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.confirm-delete-btn:hover {
+  background-color: #e53935 !important;
+  border-color: #e53935 !important;
+  color: #fff !important;
+}
+
 /* ── Radio ── */
 .ant-radio-wrapper:hover .ant-radio:not(.ant-radio-checked) {
   border-color: white;

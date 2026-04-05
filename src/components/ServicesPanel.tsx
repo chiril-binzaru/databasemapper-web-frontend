@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Typography, Dropdown, Tooltip } from 'antd';
+import { App, Button, Typography, Dropdown, Tooltip } from 'antd';
 import {
   AppstoreOutlined,
   DatabaseOutlined,
@@ -32,6 +32,7 @@ export default function ServicesPanel() {
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
 
+  const { modal } = App.useApp();
   const queryClient = useQueryClient();
 
   const { data: services = [] } = useQuery({
@@ -82,7 +83,28 @@ export default function ServicesPanel() {
 
   const handleMenuClick = (key: string, service: ServiceResponse) => {
     if (key === 'favourite') toggleFavourite(String(service.serviceId));
-    if (key === 'delete') deleteMutation.mutate(service.serviceId);
+    if (key === 'delete') {
+      modal.confirm({
+        title: 'Delete Service',
+        content: `Are you sure you want to delete "${service.serviceName}" service? This action cannot be undone.`,
+        okText: 'Delete',
+        cancelText: 'Cancel',
+        centered: true,
+        okButtonProps: {
+          className: 'confirm-delete-btn',
+          style: { boxShadow: 'none' },
+        },
+        cancelButtonProps: {
+          type: 'text',
+          style: {
+            color: 'rgba(255,255,255,0.45)',
+            border: '1px solid rgba(255,255,255,0.45)',
+            boxShadow: 'none',
+          },
+        },
+        onOk: () => deleteMutation.mutate(service.serviceId),
+      });
+    }
   };
 
   const renderServiceItem = (service: ServiceResponse) => {
