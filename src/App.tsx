@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ConfigProvider, theme } from 'antd';
+import { App as AntApp, ConfigProvider, theme } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppSidebar from './components/AppSidebar';
 import AppSidePanel from './components/AppSidePanel';
@@ -55,7 +55,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-        <AppLayout />
+        <AntApp>
+          <AppLayout />
+        </AntApp>
       </ConfigProvider>
     </QueryClientProvider>
   );
