@@ -66,10 +66,17 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
     setLoading(true);
     setError(null);
     try {
+      const trimmedBaseUrl = baseUrl.trim().replace(/\/+$/, '');
+      const trimmedEndpoint = swaggerEndpoint.trim();
+      const normalizedEndpoint = trimmedEndpoint
+        ? trimmedEndpoint.startsWith('/')
+          ? trimmedEndpoint
+          : `/${trimmedEndpoint}`
+        : undefined;
       const services = await createService({
         serviceName: serviceName.trim(),
-        serviceBaseUrl: baseUrl.trim(),
-        swaggerEndpoint: swaggerEndpoint.trim() || undefined,
+        serviceBaseUrl: trimmedBaseUrl,
+        swaggerEndpoint: normalizedEndpoint,
       });
       onAdd(services);
       reset();
