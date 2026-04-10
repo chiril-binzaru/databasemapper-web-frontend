@@ -21,3 +21,8 @@ export async function createEndpoint(data: CreateEndpointRequest): Promise<Endpo
   const response = await apiClient.post<EndpointsResponse>('/api/v1/endpoints', data);
   return response.data;
 }
+
+export async function getServiceEndpoints(serviceId: number): Promise<EndpointsResponse> {
+  const response = await apiClient.get<EndpointsResponse>(`/api/v1/services/${serviceId}/endpoints`);
+  return response.data;
+}
