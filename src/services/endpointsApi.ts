@@ -11,18 +11,47 @@ export interface EndpointsResponse {
   endpoints: EndpointItem[];
 }
 
+export interface EndpointSyncItem {
+  httpMethod: string;
+  path: string;
+  status?: 'TO_ADD' | 'TO_REMOVE' | 'UNCHANGED';
+}
+
+export interface EndpointReplaceRequest {
+  httpMethod: string;
+  path: string;
+}
+
+export interface SyncEndpointsResponse {
+  status?: 'UNCHANGED' | 'TO_ADD_ALL' | 'CONFLICT';
+  syncStatus?: 'UNCHANGED' | 'TO_ADD_ALL' | 'CONFLICT';
+  endpoints?: EndpointSyncItem[] | null;
+}
+
 interface CreateEndpointRequest {
-  serviceId: number;
   httpMethod: string;
   endpointPath: string;
 }
 
-export async function createEndpoint(data: CreateEndpointRequest): Promise<EndpointsResponse> {
-  const response = await apiClient.post<EndpointsResponse>('/api/v1/endpoints', data);
+export async function createEndpoint(serviceId: number, data: CreateEndpointRequest): Promise<EndpointsResponse> {
+  const response = await apiClient.post<EndpointsResponse>(`/api/v1/services/${serviceId}/endpoints`, data);
   return response.data;
 }
 
 export async function getServiceEndpoints(serviceId: number): Promise<EndpointsResponse> {
   const response = await apiClient.get<EndpointsResponse>(`/api/v1/services/${serviceId}/endpoints`);
+  return response.data;
+}
+
+export async function replaceServiceEndpoints(
+  serviceId: number,
+  data: EndpointReplaceRequest[],
+): Promise<EndpointsResponse> {
+  const response = await apiClient.put<EndpointsResponse>(`/api/v1/services/${serviceId}/endpoints`, data);
+  return response.data;
+}
+
+export async function syncServiceEndpoints(serviceId: number): Promise<SyncEndpointsResponse> {
+  const response = await apiClient.post<SyncEndpointsResponse>(`/api/v1/services/${serviceId}/endpoints/sync`);
   return response.data;
 }

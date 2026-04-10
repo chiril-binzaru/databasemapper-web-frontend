@@ -31,8 +31,7 @@ export default function NewEndpointModal({ open, serviceId, onClose, onAdd }: Ne
     setLoading(true);
     setError(null);
     try {
-      const response = await createEndpoint({
-        serviceId,
+      const response = await createEndpoint(serviceId, {
         httpMethod,
         endpointPath: endpointPath.trim(),
       });
