@@ -53,7 +53,7 @@ export default function SyncEndpointsModal({
       centered
       footer={null}
       closable={!loading}
-      maskClosable={!loading}
+      mask={{ closable: !loading }}
       styles={{
         container: { padding: 0, background: '#2b2b2b', borderRadius: 8 },
         header: { padding: '16px 48px 12px 20px', background: 'transparent', borderBottom: 'none', marginBottom: 0 },
