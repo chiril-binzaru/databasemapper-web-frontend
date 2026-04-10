@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getServices, deleteService } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
 import NewEndpointModal from './NewEndpointModal';
+import { getServiceEndpoints } from '../services/endpointsApi';
 import type { EndpointItem } from '../services/endpointsApi';
 
 const METHOD_COLORS: Record<string, string> = {
@@ -31,6 +32,8 @@ export default function ServicesPanel() {
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
+  const [endpointsLoadingByService, setEndpointsLoadingByService] = useState<Record<number, boolean>>({});
+  const [endpointsErrorByService, setEndpointsErrorByService] = useState<Record<number, string | null>>({});
 
   const { modal } = App.useApp();
   const queryClient = useQueryClient();
@@ -54,6 +57,30 @@ export default function ServicesPanel() {
       setExpandedServiceId(serviceId);
       setDbExpanded(false);
       setEndpointsExpanded(false);
+    }
+  };
+
+  const handleEndpointsClick = async (serviceId: number) => {
+    const willExpand = !endpointsExpanded;
+    setEndpointsExpanded(willExpand);
+
+    if (!willExpand || endpointsByService[serviceId] !== undefined || endpointsLoadingByService[serviceId]) {
+      return;
+    }
+
+    setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: true }));
+    setEndpointsErrorByService(prev => ({ ...prev, [serviceId]: null }));
+
+    try {
+      const response = await getServiceEndpoints(serviceId);
+      setEndpointsByService(prev => ({ ...prev, [serviceId]: response.endpoints }));
+    } catch {
+      setEndpointsErrorByService(prev => ({
+        ...prev,
+        [serviceId]: 'Failed to load endpoints. Check that the server is running.',
+      }));
+    } finally {
+      setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: false }));
     }
   };
 
@@ -184,7 +211,7 @@ export default function ServicesPanel() {
             <div>
               <div
                 style={styles.subSectionHeader}
-                onClick={() => setEndpointsExpanded(v => !v)}
+                onClick={() => void handleEndpointsClick(service.serviceId)}
               >
                 <RightOutlined
                   style={{
@@ -209,7 +236,11 @@ export default function ServicesPanel() {
               </div>
               {endpointsExpanded && (
                 <div style={styles.subSectionContent}>
-                  {(endpointsByService[service.serviceId] ?? []).length === 0 ? (
+                  {endpointsLoadingByService[service.serviceId] ? (
+                    <span style={styles.emptyHint}>Loading endpoints...</span>
+                  ) : endpointsErrorByService[service.serviceId] ? (
+                    <span style={styles.errorHint}>{endpointsErrorByService[service.serviceId]}</span>
+                  ) : (endpointsByService[service.serviceId] ?? []).length === 0 ? (
                     <span style={styles.emptyHint}>No endpoint was added for this service</span>
                   ) : (
                     (endpointsByService[service.serviceId] ?? []).map(ep => (
@@ -380,6 +411,11 @@ const styles: Record<string, CSSProperties> = {
   emptyHint: {
     fontSize: 11,
     color: 'rgba(255,255,255,0.2)',
+    fontStyle: 'italic',
+  },
+  errorHint: {
+    fontSize: 11,
+    color: '#ff7875',
     fontStyle: 'italic',
   },
   endpointItem: {

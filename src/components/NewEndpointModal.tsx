@@ -72,7 +72,7 @@ export default function NewEndpointModal({ open, serviceId, onClose, onAdd }: Ne
         theme={{
           components: {
             Input: { hoverBorderColor: '#424242', activeShadow: 'none' },
-            Select: { hoverBorderColor: '#424242', activeShadow: 'none' },
+            Select: { hoverBorderColor: '#424242' },
           },
         }}
       >

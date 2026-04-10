@@ -7,7 +7,6 @@ import type { PanelType } from '../types/panel';
 import ServicesPanel from './ServicesPanel';
 import NewServiceModal from './NewServiceModal';
 import { useQueryClient } from '@tanstack/react-query';
-import type { ServiceResponse } from '../services/servicesApi';
 
 interface AppSidePanelProps {
   panel: PanelType;
