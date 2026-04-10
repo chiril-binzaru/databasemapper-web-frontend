@@ -14,8 +14,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getServices, deleteService } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
 import NewEndpointModal from './NewEndpointModal';
-import { getServiceEndpoints } from '../services/endpointsApi';
+import SyncEndpointsModal from './SyncEndpointsModal';
+import { getServiceEndpoints, replaceServiceEndpoints, syncServiceEndpoints } from '../services/endpointsApi';
 import type { EndpointItem } from '../services/endpointsApi';
+import type { EndpointSyncItem } from '../services/endpointsApi';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#61affe',
@@ -34,6 +36,13 @@ export default function ServicesPanel() {
   const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
   const [endpointsLoadingByService, setEndpointsLoadingByService] = useState<Record<number, boolean>>({});
   const [endpointsErrorByService, setEndpointsErrorByService] = useState<Record<number, string | null>>({});
+  const [syncLoadingByService, setSyncLoadingByService] = useState<Record<number, boolean>>({});
+  const [syncModalState, setSyncModalState] = useState<{
+    serviceId: number;
+    serviceName: string;
+    endpoints: EndpointSyncItem[];
+  } | null>(null);
+  const [syncCommitLoading, setSyncCommitLoading] = useState(false);
 
   const { modal } = App.useApp();
   const queryClient = useQueryClient();
@@ -83,6 +92,84 @@ export default function ServicesPanel() {
       setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: false }));
     }
   };
+
+  const handleSyncWithSwagger = async (service: ServiceResponse) => {
+    if (syncLoadingByService[service.serviceId]) {
+      return;
+    }
+
+    setSyncLoadingByService(prev => ({ ...prev, [service.serviceId]: true }));
+
+    try {
+      const response = await syncServiceEndpoints(service.serviceId);
+      const syncStatus = response.syncStatus ?? response.status;
+
+      if (syncStatus === 'UNCHANGED') {
+        modal.info({
+          title: 'Sync with Swagger',
+          content: (
+            <span>
+              Endpoints list has not changed for service <strong>{service.serviceName}</strong>
+            </span>
+          ),
+          centered: true,
+          okText: 'Ok',
+          okButtonProps: {
+            type: 'primary',
+            size: 'small',
+            style: {
+              boxShadow: 'none',
+            },
+          },
+        });
+      }
+      if (syncStatus === 'TO_ADD_ALL') {
+        setSyncModalState({
+          serviceId: service.serviceId,
+          serviceName: service.serviceName,
+          endpoints: response.endpoints ?? [],
+        });
+      }
+    } finally {
+      setSyncLoadingByService(prev => ({ ...prev, [service.serviceId]: false }));
+    }
+  };
+
+  const handleCommitSyncedEndpoints = async (selectedEndpoints: EndpointSyncItem[]) => {
+    if (!syncModalState || selectedEndpoints.length === 0) {
+      return;
+    }
+
+    setSyncCommitLoading(true);
+
+    try {
+      const response = await replaceServiceEndpoints(
+        syncModalState.serviceId,
+        selectedEndpoints.map(endpoint => ({
+          httpMethod: endpoint.httpMethod,
+          path: endpoint.path,
+        })),
+      );
+
+      setEndpointsByService(prev => ({
+        ...prev,
+        [syncModalState.serviceId]: response.endpoints,
+      }));
+      setEndpointsErrorByService(prev => ({
+        ...prev,
+        [syncModalState.serviceId]: null,
+      }));
+      setEndpointsExpanded(true);
+      setExpandedServiceId(String(syncModalState.serviceId));
+      setSyncModalState(null);
+    } finally {
+      setSyncCommitLoading(false);
+    }
+  };
+
+  const getEndpointsMenuItems = () => [
+    { key: 'sync-swagger', label: 'Sync with Swagger' },
+  ];
 
   const toggleFavourite = (serviceId: string) => {
     setFavouriteIds(prev => {
@@ -221,6 +308,29 @@ export default function ServicesPanel() {
                 />
                 <ApiOutlined style={styles.subSectionIcon} />
                 <span style={styles.subSectionTitle}>Endpoints</span>
+                <Dropdown
+                  menu={{
+                    items: getEndpointsMenuItems(),
+                    onClick: ({ key, domEvent }) => {
+                      domEvent.stopPropagation();
+
+                      if (key === 'sync-swagger') {
+                        void handleSyncWithSwagger(service);
+                      }
+                    },
+                  }}
+                  trigger={['click']}
+                  placement="bottomRight"
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MoreOutlined />}
+                    loading={syncLoadingByService[service.serviceId]}
+                    style={styles.subSectionMenuBtn}
+                    onClick={e => e.stopPropagation()}
+                  />
+                </Dropdown>
                 <Tooltip title="Add Endpoint" placement="bottom">
                   <Button
                     type="text"
@@ -287,6 +397,17 @@ export default function ServicesPanel() {
             setEndpointsByService(prev => ({ ...prev, [endpointModalServiceId]: endpoints }));
             setEndpointModalServiceId(null);
           }}
+        />
+      )}
+
+      {syncModalState !== null && (
+        <SyncEndpointsModal
+          open
+          serviceName={syncModalState.serviceName}
+          endpoints={syncModalState.endpoints}
+          loading={syncCommitLoading}
+          onCancel={() => setSyncModalState(null)}
+          onConfirm={handleCommitSyncedEndpoints}
         />
       )}
     </>
@@ -405,6 +526,10 @@ const styles: Record<string, CSSProperties> = {
     gap: 4,
   },
   subSectionAddBtn: {
+    color: 'rgba(255,255,255,0.25)',
+    flexShrink: 0,
+  },
+  subSectionMenuBtn: {
     color: 'rgba(255,255,255,0.25)',
     flexShrink: 0,
   },
