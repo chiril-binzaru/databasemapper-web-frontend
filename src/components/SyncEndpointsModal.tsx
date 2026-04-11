@@ -176,7 +176,7 @@ export default function SyncEndpointsModal({
               icon={<ApiOutlined />}
               style={styles.btnPrimary}
               onClick={handleConfirm}
-              disabled={syncStatus !== 'CONFLICT' && selectedKeys.length === 0}
+              disabled={selectedKeys.length === 0}
               loading={loading}
             >
               {syncStatus === 'CONFLICT' ? 'Apply sync changes' : 'Add endpoints'}

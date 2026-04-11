@@ -138,11 +138,7 @@ export default function ServicesPanel() {
   };
 
   const handleCommitSyncedEndpoints = async (selectedEndpoints: EndpointSyncItem[]) => {
-    if (!syncModalState) {
-      return;
-    }
-
-    if (syncModalState.syncStatus !== 'CONFLICT' && selectedEndpoints.length === 0) {
+    if (!syncModalState || selectedEndpoints.length === 0) {
       return;
     }
 
