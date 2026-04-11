@@ -40,6 +40,7 @@ export default function ServicesPanel() {
   const [syncModalState, setSyncModalState] = useState<{
     serviceId: number;
     serviceName: string;
+    syncStatus: 'TO_ADD_ALL' | 'CONFLICT';
     endpoints: EndpointSyncItem[];
   } | null>(null);
   const [syncCommitLoading, setSyncCommitLoading] = useState(false);
@@ -123,10 +124,11 @@ export default function ServicesPanel() {
           },
         });
       }
-      if (syncStatus === 'TO_ADD_ALL') {
+      if (syncStatus === 'TO_ADD_ALL' || syncStatus === 'CONFLICT') {
         setSyncModalState({
           serviceId: service.serviceId,
           serviceName: service.serviceName,
+          syncStatus,
           endpoints: response.endpoints ?? [],
         });
       }
@@ -136,19 +138,44 @@ export default function ServicesPanel() {
   };
 
   const handleCommitSyncedEndpoints = async (selectedEndpoints: EndpointSyncItem[]) => {
-    if (!syncModalState || selectedEndpoints.length === 0) {
+    if (!syncModalState) {
+      return;
+    }
+
+    if (syncModalState.syncStatus !== 'CONFLICT' && selectedEndpoints.length === 0) {
       return;
     }
 
     setSyncCommitLoading(true);
 
     try {
-      const response = await replaceServiceEndpoints(
-        syncModalState.serviceId,
-        selectedEndpoints.map(endpoint => ({
+      const selectedKeys = new Set(selectedEndpoints.map(endpoint => `${endpoint.httpMethod}:${endpoint.path}`));
+      const replacementEndpoints = syncModalState.endpoints
+        .filter(endpoint => {
+          const key = `${endpoint.httpMethod}:${endpoint.path}`;
+
+          if (endpoint.status === 'UNCHANGED') {
+            return true;
+          }
+
+          if (endpoint.status === 'TO_ADD') {
+            return selectedKeys.has(key);
+          }
+
+          if (endpoint.status === 'TO_REMOVE') {
+            return !selectedKeys.has(key);
+          }
+
+          return false;
+        })
+        .map(endpoint => ({
           httpMethod: endpoint.httpMethod,
           path: endpoint.path,
-        })),
+        }));
+
+      const response = await replaceServiceEndpoints(
+        syncModalState.serviceId,
+        replacementEndpoints,
       );
 
       setEndpointsByService(prev => ({
@@ -404,6 +431,7 @@ export default function ServicesPanel() {
         <SyncEndpointsModal
           open
           serviceName={syncModalState.serviceName}
+          syncStatus={syncModalState.syncStatus}
           endpoints={syncModalState.endpoints}
           loading={syncCommitLoading}
           onCancel={() => setSyncModalState(null)}

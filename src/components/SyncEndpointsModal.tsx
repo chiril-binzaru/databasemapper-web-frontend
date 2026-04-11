@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Button, Checkbox, ConfigProvider } from 'antd';
 import { ApiOutlined } from '@ant-design/icons';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import type { EndpointSyncItem } from '../services/endpointsApi';
 
 interface SyncEndpointsModalProps {
   open: boolean;
   serviceName: string;
+  syncStatus: 'TO_ADD_ALL' | 'CONFLICT';
   endpoints: EndpointSyncItem[];
   loading: boolean;
   onCancel: () => void;
@@ -16,6 +17,7 @@ interface SyncEndpointsModalProps {
 export default function SyncEndpointsModal({
   open,
   serviceName,
+  syncStatus,
   endpoints,
   loading,
   onCancel,
@@ -23,20 +25,46 @@ export default function SyncEndpointsModal({
 }: SyncEndpointsModalProps) {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
+  const endpointsToAdd = useMemo(
+    () => endpoints.filter(endpoint => endpoint.status === 'TO_ADD'),
+    [endpoints],
+  );
+  const endpointsToRemove = useMemo(
+    () => endpoints.filter(endpoint => endpoint.status === 'TO_REMOVE'),
+    [endpoints],
+  );
+
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    setSelectedKeys(endpoints.map(getEndpointKey));
+    setSelectedKeys(
+      endpoints
+        .filter(endpoint => endpoint.status === 'TO_ADD' || endpoint.status === 'TO_REMOVE')
+        .map(getEndpointKey),
+    );
   }, [open, endpoints]);
 
-  const allKeys = useMemo(() => endpoints.map(getEndpointKey), [endpoints]);
-  const allChecked = endpoints.length > 0 && selectedKeys.length === endpoints.length;
-  const indeterminate = selectedKeys.length > 0 && selectedKeys.length < endpoints.length;
+  const allAddKeys = useMemo(() => endpointsToAdd.map(getEndpointKey), [endpointsToAdd]);
+  const allRemoveKeys = useMemo(() => endpointsToRemove.map(getEndpointKey), [endpointsToRemove]);
+  const addCheckedCount = allAddKeys.filter(key => selectedKeys.includes(key)).length;
+  const removeCheckedCount = allRemoveKeys.filter(key => selectedKeys.includes(key)).length;
+  const allAddChecked = allAddKeys.length > 0 && addCheckedCount === allAddKeys.length;
+  const addIndeterminate = addCheckedCount > 0 && addCheckedCount < allAddKeys.length;
+  const allRemoveChecked = allRemoveKeys.length > 0 && removeCheckedCount === allRemoveKeys.length;
+  const removeIndeterminate = removeCheckedCount > 0 && removeCheckedCount < allRemoveKeys.length;
 
-  const handleToggleAll = (checked: boolean) => {
-    setSelectedKeys(checked ? allKeys : []);
+  const handleToggleAll = (keys: string[], checked: boolean) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev.filter(key => !keys.includes(key)));
+
+      if (checked) {
+        keys.forEach(key => next.add(key));
+      }
+
+      return Array.from(next);
+    });
   };
 
   const handleConfirm = () => {
@@ -49,7 +77,7 @@ export default function SyncEndpointsModal({
       open={open}
       onCancel={loading ? undefined : onCancel}
       title={<span style={styles.modalTitle}>Sync with Swagger</span>}
-      width={560}
+      width={syncStatus === 'CONFLICT' ? 920 : 560}
       centered
       footer={null}
       closable={!loading}
@@ -74,43 +102,71 @@ export default function SyncEndpointsModal({
         <div style={styles.body}>
           <div style={styles.sectionBody}>
             <div style={styles.subtitle}>
-              List of endpoints for <strong>{serviceName}</strong> service is empty now. Choose endpoints to be added from Swagger.
+              {syncStatus === 'CONFLICT' ? (
+                <>
+                  Swagger and stored endpoints differ for <strong>{serviceName}</strong>. Choose which new endpoints to add and which existing endpoints to remove.
+                </>
+              ) : (
+                <>
+                  List of endpoints for <strong>{serviceName}</strong> service is empty now. Choose endpoints to be added from Swagger.
+                </>
+              )}
             </div>
 
-            <div style={styles.selectAllRow}>
-              <Checkbox
-                checked={allChecked}
-                indeterminate={indeterminate}
-                disabled={loading || endpoints.length === 0}
-                onChange={e => handleToggleAll(e.target.checked)}
-              >
-                <span style={styles.selectAllLabel}>Select all endpoints</span>
-              </Checkbox>
-            </div>
-
-            <div style={styles.list}>
-              {endpoints.map(endpoint => {
-                const key = getEndpointKey(endpoint);
-
-                return (
-                  <label key={key} style={styles.endpointRow}>
+            {syncStatus === 'CONFLICT' ? (
+              <div style={styles.conflictColumns}>
+                <div style={styles.conflictColumn}>
+                  <div style={styles.columnHeader}>
+                    <span style={styles.columnTitle}>Endpoints to add</span>
                     <Checkbox
-                      checked={selectedKeys.includes(key)}
-                      disabled={loading}
-                      onChange={e => {
-                        setSelectedKeys(prev =>
-                          e.target.checked ? [...prev, key] : prev.filter(item => item !== key),
-                        );
-                      }}
-                    />
-                    <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[endpoint.httpMethod] ?? 'rgba(255,255,255,0.5)' }}>
-                      {endpoint.httpMethod}
-                    </span>
-                    <span style={styles.endpointPath}>{endpoint.path}</span>
-                  </label>
-                );
-              })}
-            </div>
+                      checked={allAddChecked}
+                      indeterminate={addIndeterminate}
+                      disabled={loading || endpointsToAdd.length === 0}
+                      onChange={e => handleToggleAll(allAddKeys, e.target.checked)}
+                    >
+                      <span style={styles.selectAllLabel}>Select all</span>
+                    </Checkbox>
+                  </div>
+                  <div style={styles.list}>
+                    {renderEndpointList(endpointsToAdd, selectedKeys, loading, setSelectedKeys)}
+                  </div>
+                </div>
+
+                <div style={styles.conflictColumn}>
+                  <div style={styles.columnHeader}>
+                    <span style={styles.columnTitle}>Endpoints to remove</span>
+                    <Checkbox
+                      checked={allRemoveChecked}
+                      indeterminate={removeIndeterminate}
+                      disabled={loading || endpointsToRemove.length === 0}
+                      onChange={e => handleToggleAll(allRemoveKeys, e.target.checked)}
+                    >
+                      <span style={styles.selectAllLabel}>Select all</span>
+                    </Checkbox>
+                  </div>
+                  <div style={styles.list}>
+                    {renderEndpointList(endpointsToRemove, selectedKeys, loading, setSelectedKeys)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={styles.selectAllRow}>
+                  <Checkbox
+                    checked={allAddChecked}
+                    indeterminate={addIndeterminate}
+                    disabled={loading || endpointsToAdd.length === 0}
+                    onChange={e => handleToggleAll(allAddKeys, e.target.checked)}
+                  >
+                    <span style={styles.selectAllLabel}>Select all endpoints</span>
+                  </Checkbox>
+                </div>
+
+                <div style={styles.list}>
+                  {renderEndpointList(endpointsToAdd, selectedKeys, loading, setSelectedKeys)}
+                </div>
+              </>
+            )}
           </div>
 
           <div style={styles.footerSeparator} />
@@ -120,10 +176,10 @@ export default function SyncEndpointsModal({
               icon={<ApiOutlined />}
               style={styles.btnPrimary}
               onClick={handleConfirm}
-              disabled={selectedKeys.length === 0}
+              disabled={syncStatus !== 'CONFLICT' && selectedKeys.length === 0}
               loading={loading}
             >
-              Add endpoints
+              {syncStatus === 'CONFLICT' ? 'Apply sync changes' : 'Add endpoints'}
             </Button>
             <Button
               type="text"
@@ -142,6 +198,39 @@ export default function SyncEndpointsModal({
 
 function getEndpointKey(endpoint: EndpointSyncItem) {
   return `${endpoint.httpMethod}:${endpoint.path}`;
+}
+
+function renderEndpointList(
+  endpoints: EndpointSyncItem[],
+  selectedKeys: string[],
+  loading: boolean,
+  setSelectedKeys: Dispatch<SetStateAction<string[]>>,
+) {
+  if (endpoints.length === 0) {
+    return <div style={styles.emptyListHint}>No endpoints in this section</div>;
+  }
+
+  return endpoints.map(endpoint => {
+    const key = getEndpointKey(endpoint);
+
+    return (
+      <label key={key} style={styles.endpointRow}>
+        <Checkbox
+          checked={selectedKeys.includes(key)}
+          disabled={loading}
+          onChange={e => {
+            setSelectedKeys(prev =>
+              e.target.checked ? [...prev, key] : prev.filter(item => item !== key),
+            );
+          }}
+        />
+        <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[endpoint.httpMethod] ?? 'rgba(255,255,255,0.5)' }}>
+          {endpoint.httpMethod}
+        </span>
+        <span style={styles.endpointPath}>{endpoint.path}</span>
+      </label>
+    );
+  });
 }
 
 const METHOD_COLORS: Record<string, string> = {
@@ -177,6 +266,29 @@ const styles: Record<string, CSSProperties> = {
     padding: '4px 0 6px',
     borderBottom: '1px solid rgba(255,255,255,0.06)',
   },
+  conflictColumns: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 16,
+  },
+  conflictColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  },
+  columnHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    padding: '4px 0 8px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+  },
+  columnTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'rgba(255,255,255,0.82)',
+  },
   selectAllLabel: {
     color: 'rgba(255,255,255,0.75)',
     fontSize: 12,
@@ -188,6 +300,14 @@ const styles: Record<string, CSSProperties> = {
     gap: 8,
     maxHeight: 320,
     overflowY: 'auto',
+  },
+  emptyListHint: {
+    padding: '16px 12px',
+    borderRadius: 6,
+    background: 'rgba(255,255,255,0.03)',
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    textAlign: 'center',
   },
   endpointRow: {
     display: 'flex',
