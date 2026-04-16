@@ -13,6 +13,8 @@ import type { CSSProperties } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getServices, deleteService } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
+import { getServiceDatabase } from '../services/databaseApi';
+import type { DatabaseResponse } from '../services/databaseApi';
 import NewEndpointModal from './NewEndpointModal';
 import SyncEndpointsModal from './SyncEndpointsModal';
 import { getServiceEndpoints, replaceServiceEndpoints, syncServiceEndpoints } from '../services/endpointsApi';
@@ -33,6 +35,9 @@ export default function ServicesPanel() {
   const [endpointsExpanded, setEndpointsExpanded] = useState(false);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
+  const [databaseByService, setDatabaseByService] = useState<Record<number, DatabaseResponse | null | undefined>>({});
+  const [databaseLoadingByService, setDatabaseLoadingByService] = useState<Record<number, boolean>>({});
+  const [databaseErrorByService, setDatabaseErrorByService] = useState<Record<number, string | null>>({});
   const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
   const [endpointsLoadingByService, setEndpointsLoadingByService] = useState<Record<number, boolean>>({});
   const [endpointsErrorByService, setEndpointsErrorByService] = useState<Record<number, string | null>>({});
@@ -91,6 +96,30 @@ export default function ServicesPanel() {
       }));
     } finally {
       setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: false }));
+    }
+  };
+
+  const handleDatabaseClick = async (serviceId: number) => {
+    const willExpand = !dbExpanded;
+    setDbExpanded(willExpand);
+
+    if (!willExpand || databaseByService[serviceId] !== undefined || databaseLoadingByService[serviceId]) {
+      return;
+    }
+
+    setDatabaseLoadingByService(prev => ({ ...prev, [serviceId]: true }));
+    setDatabaseErrorByService(prev => ({ ...prev, [serviceId]: null }));
+
+    try {
+      const response = await getServiceDatabase(serviceId);
+      setDatabaseByService(prev => ({ ...prev, [serviceId]: response }));
+    } catch {
+      setDatabaseErrorByService(prev => ({
+        ...prev,
+        [serviceId]: 'Failed to load database details. Check that the server is running.',
+      }));
+    } finally {
+      setDatabaseLoadingByService(prev => ({ ...prev, [serviceId]: false }));
     }
   };
 
@@ -299,7 +328,7 @@ export default function ServicesPanel() {
             <div>
               <div
                 style={styles.subSectionHeader}
-                onClick={() => setDbExpanded(v => !v)}
+                onClick={() => void handleDatabaseClick(service.serviceId)}
               >
                 <RightOutlined
                   style={{
@@ -312,7 +341,29 @@ export default function ServicesPanel() {
               </div>
               {dbExpanded && (
                 <div style={styles.subSectionContent}>
-                  <span style={styles.emptyHint}>No database source specified for this service</span>
+                  {databaseLoadingByService[service.serviceId] ? (
+                    <span style={styles.emptyHint}>Loading database details...</span>
+                  ) : databaseErrorByService[service.serviceId] ? (
+                    <span style={styles.errorHint}>{databaseErrorByService[service.serviceId]}</span>
+                  ) : !databaseByService[service.serviceId] ? (
+                    <span style={styles.emptyHint}>No database source specified for this service</span>
+                  ) : (
+                    <div style={styles.databaseCard}>
+                      <div style={styles.databaseTypeBadge}>
+                        {databaseByService[service.serviceId]?.databaseType.replace('_', ' ')}
+                      </div>
+                      <div style={styles.databaseDetails}>
+                        <div style={styles.databaseRow}>
+                          <span style={styles.databaseLabel}>Name</span>
+                          <span style={styles.databaseValue}>{databaseByService[service.serviceId]?.databaseName}</span>
+                        </div>
+                        <div style={styles.databaseRow}>
+                          <span style={styles.databaseLabel}>Host</span>
+                          <span style={styles.databaseValue}>{databaseByService[service.serviceId]?.databaseHost}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -566,6 +617,48 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 11,
     color: '#ff7875',
     fontStyle: 'italic',
+  },
+  databaseCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    padding: '10px 12px',
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,0.08)',
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
+  },
+  databaseTypeBadge: {
+    alignSelf: 'flex-start',
+    padding: '3px 8px',
+    borderRadius: 999,
+    background: 'rgba(255,255,255,0.08)',
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.06em',
+  },
+  databaseDetails: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  databaseRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  databaseLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  databaseValue: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.72)',
+    fontFamily: 'monospace',
+    textAlign: 'right',
   },
   endpointItem: {
     display: 'flex',
