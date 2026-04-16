@@ -15,6 +15,8 @@ import { getServices, deleteService } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
 import { getServiceDatabase } from '../services/databaseApi';
 import type { DatabaseResponse } from '../services/databaseApi';
+import { getDatabaseConnections } from '../services/connectionsApi';
+import type { ConnectionItem } from '../services/connectionsApi';
 import NewEndpointModal from './NewEndpointModal';
 import SyncEndpointsModal from './SyncEndpointsModal';
 import { getServiceEndpoints, replaceServiceEndpoints, syncServiceEndpoints } from '../services/endpointsApi';
@@ -32,12 +34,16 @@ const METHOD_COLORS: Record<string, string> = {
 export default function ServicesPanel() {
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
   const [dbExpanded, setDbExpanded] = useState(false);
+  const [connectionsExpanded, setConnectionsExpanded] = useState(false);
   const [endpointsExpanded, setEndpointsExpanded] = useState(false);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [databaseByService, setDatabaseByService] = useState<Record<number, DatabaseResponse | null | undefined>>({});
   const [databaseLoadingByService, setDatabaseLoadingByService] = useState<Record<number, boolean>>({});
   const [databaseErrorByService, setDatabaseErrorByService] = useState<Record<number, string | null>>({});
+  const [connectionsByDatabase, setConnectionsByDatabase] = useState<Record<number, ConnectionItem[]>>({});
+  const [connectionsLoadingByDatabase, setConnectionsLoadingByDatabase] = useState<Record<number, boolean>>({});
+  const [connectionsErrorByDatabase, setConnectionsErrorByDatabase] = useState<Record<number, string | null>>({});
   const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
   const [endpointsLoadingByService, setEndpointsLoadingByService] = useState<Record<number, boolean>>({});
   const [endpointsErrorByService, setEndpointsErrorByService] = useState<Record<number, string | null>>({});
@@ -71,6 +77,7 @@ export default function ServicesPanel() {
     } else {
       setExpandedServiceId(serviceId);
       setDbExpanded(false);
+      setConnectionsExpanded(false);
       setEndpointsExpanded(false);
     }
   };
@@ -102,6 +109,9 @@ export default function ServicesPanel() {
   const handleDatabaseClick = async (serviceId: number) => {
     const willExpand = !dbExpanded;
     setDbExpanded(willExpand);
+    if (!willExpand) {
+      setConnectionsExpanded(false);
+    }
 
     if (!willExpand || databaseByService[serviceId] !== undefined || databaseLoadingByService[serviceId]) {
       return;
@@ -120,6 +130,30 @@ export default function ServicesPanel() {
       }));
     } finally {
       setDatabaseLoadingByService(prev => ({ ...prev, [serviceId]: false }));
+    }
+  };
+
+  const handleConnectionsClick = async (databaseId: number) => {
+    const willExpand = !connectionsExpanded;
+    setConnectionsExpanded(willExpand);
+
+    if (!willExpand || connectionsByDatabase[databaseId] !== undefined || connectionsLoadingByDatabase[databaseId]) {
+      return;
+    }
+
+    setConnectionsLoadingByDatabase(prev => ({ ...prev, [databaseId]: true }));
+    setConnectionsErrorByDatabase(prev => ({ ...prev, [databaseId]: null }));
+
+    try {
+      const response = await getDatabaseConnections(databaseId);
+      setConnectionsByDatabase(prev => ({ ...prev, [databaseId]: response }));
+    } catch {
+      setConnectionsErrorByDatabase(prev => ({
+        ...prev,
+        [databaseId]: 'Failed to load connections. Check that the server is running.',
+      }));
+    } finally {
+      setConnectionsLoadingByDatabase(prev => ({ ...prev, [databaseId]: false }));
     }
   };
 
@@ -277,6 +311,7 @@ export default function ServicesPanel() {
     const id = String(service.serviceId);
     const isExpanded = expandedServiceId === id;
     const isFavourite = favouriteIds.has(id);
+    const database = databaseByService[service.serviceId];
 
     return (
       <div key={id}>
@@ -345,22 +380,77 @@ export default function ServicesPanel() {
                     <span style={styles.emptyHint}>Loading database details...</span>
                   ) : databaseErrorByService[service.serviceId] ? (
                     <span style={styles.errorHint}>{databaseErrorByService[service.serviceId]}</span>
-                  ) : !databaseByService[service.serviceId] ? (
+                  ) : !database ? (
                     <span style={styles.emptyHint}>No database source specified for this service</span>
                   ) : (
                     <div style={styles.databaseCard}>
                       <div style={styles.databaseTypeBadge}>
-                        {databaseByService[service.serviceId]?.databaseType.replace('_', ' ')}
+                        {database.databaseType.replace('_', ' ')}
                       </div>
                       <div style={styles.databaseDetails}>
                         <div style={styles.databaseRow}>
                           <span style={styles.databaseLabel}>Name</span>
-                          <span style={styles.databaseValue}>{databaseByService[service.serviceId]?.databaseName}</span>
+                          <span style={styles.databaseValue}>{database.databaseName}</span>
                         </div>
                         <div style={styles.databaseRow}>
                           <span style={styles.databaseLabel}>Host</span>
-                          <span style={styles.databaseValue}>{databaseByService[service.serviceId]?.databaseHost}</span>
+                          <span style={styles.databaseValue}>{database.databaseHost}</span>
                         </div>
+                      </div>
+                      <div style={styles.nestedSection}>
+                        <div
+                          style={styles.nestedSectionHeader}
+                          onClick={() => void handleConnectionsClick(database.databaseId)}
+                        >
+                          <RightOutlined
+                            style={{
+                              ...styles.nestedChevron,
+                              transform: connectionsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                            }}
+                          />
+                          <ApiOutlined style={styles.nestedSectionIcon} />
+                          <span style={styles.nestedSectionTitle}>Connections</span>
+                        </div>
+                        {connectionsExpanded && (
+                          <div style={styles.nestedSectionContent}>
+                            {connectionsLoadingByDatabase[database.databaseId] ? (
+                              <span style={styles.emptyHint}>Loading connections...</span>
+                            ) : connectionsErrorByDatabase[database.databaseId] ? (
+                              <span style={styles.errorHint}>{connectionsErrorByDatabase[database.databaseId]}</span>
+                            ) : (connectionsByDatabase[database.databaseId] ?? []).length === 0 ? (
+                              <span style={styles.emptyHint}>No database connections configured</span>
+                            ) : (
+                              (connectionsByDatabase[database.databaseId] ?? []).map(connection => (
+                                <div key={connection.connectionId} style={styles.connectionItem}>
+                                  <div style={styles.connectionMainRow}>
+                                    <span style={styles.connectionModeBadge}>
+                                      {connection.connectionMode === 'CONNECTION_STRING' ? 'Connection String' : 'Parameters'}
+                                    </span>
+                                    {connection.active && <span style={styles.connectionActiveBadge}>Active</span>}
+                                  </div>
+                                  {connection.username ? (
+                                    <div style={styles.connectionRow}>
+                                      <span style={styles.connectionLabel}>User</span>
+                                      <span style={styles.connectionValue}>{connection.username}</span>
+                                    </div>
+                                  ) : null}
+                                  {connection.port !== null && connection.port !== undefined ? (
+                                    <div style={styles.connectionRow}>
+                                      <span style={styles.connectionLabel}>Port</span>
+                                      <span style={styles.connectionValue}>{connection.port}</span>
+                                    </div>
+                                  ) : null}
+                                  {connection.connectionString ? (
+                                    <div style={styles.connectionColumn}>
+                                      <span style={styles.connectionLabel}>Connection String</span>
+                                      <span style={styles.connectionStringValue}>{connection.connectionString}</span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -659,6 +749,98 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.72)',
     fontFamily: 'monospace',
     textAlign: 'right',
+  },
+  nestedSection: {
+    borderTop: '1px solid rgba(255,255,255,0.08)',
+    paddingTop: 10,
+  },
+  nestedSectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    cursor: 'pointer',
+  },
+  nestedChevron: {
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.2)',
+    flexShrink: 0,
+    transition: 'transform 0.2s',
+  },
+  nestedSectionIcon: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.28)',
+    flexShrink: 0,
+  },
+  nestedSectionTitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.56)',
+    fontWeight: 500,
+  },
+  nestedSectionContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    paddingTop: 10,
+  },
+  connectionItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    padding: '9px 10px',
+    borderRadius: 8,
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.06)',
+  },
+  connectionMainRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  connectionModeBadge: {
+    padding: '2px 7px',
+    borderRadius: 999,
+    background: 'rgba(255,255,255,0.08)',
+    color: 'rgba(255,255,255,0.64)',
+    fontSize: 10,
+    fontWeight: 600,
+  },
+  connectionActiveBadge: {
+    padding: '2px 7px',
+    borderRadius: 999,
+    background: 'rgba(73,204,144,0.14)',
+    color: '#73d13d',
+    fontSize: 10,
+    fontWeight: 700,
+  },
+  connectionRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  connectionColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  },
+  connectionLabel: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.35)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  connectionValue: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.72)',
+    fontFamily: 'monospace',
+    textAlign: 'right',
+  },
+  connectionStringValue: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.62)',
+    fontFamily: 'monospace',
+    wordBreak: 'break-all',
   },
   endpointItem: {
     display: 'flex',
