@@ -658,7 +658,10 @@ export default function ServicesPanel() {
           onAdd={connection => {
             setConnectionsByDatabase(prev => {
               const existingConnections = prev[connection.databaseId] ?? [];
-              const withoutReplaced = existingConnections.filter(item => item.connectionId !== connection.connectionId);
+              const normalizedConnections = connection.active
+                ? existingConnections.map(item => ({ ...item, active: false }))
+                : existingConnections;
+              const withoutReplaced = normalizedConnections.filter(item => item.connectionId !== connection.connectionId);
 
               return {
                 ...prev,
