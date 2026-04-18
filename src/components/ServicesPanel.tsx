@@ -15,7 +15,7 @@ import { getServices, deleteService } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
 import { getServiceDatabase } from '../services/databaseApi';
 import type { DatabaseResponse } from '../services/databaseApi';
-import { getDatabaseConnections } from '../services/connectionsApi';
+import { deleteDatabaseConnection, getDatabaseConnections } from '../services/connectionsApi';
 import type { ConnectionItem } from '../services/connectionsApi';
 import NewConnectionModal from './NewConnectionModal';
 import NewEndpointModal from './NewEndpointModal';
@@ -71,6 +71,11 @@ export default function ServicesPanel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['services'] });
     },
+  });
+
+  const deleteConnectionMutation = useMutation({
+    mutationFn: ({ databaseId, connectionId }: { databaseId: number; connectionId: number }) =>
+      deleteDatabaseConnection(databaseId, connectionId),
   });
 
   const handleServiceClick = (serviceId: string) => {
@@ -259,6 +264,10 @@ export default function ServicesPanel() {
     { key: 'sync-swagger', label: 'Sync with Swagger' },
   ];
 
+  const getConnectionMenuItems = () => [
+    { key: 'delete', label: <span style={{ color: '#ff4d4f' }}>Delete</span> },
+  ];
+
   const toggleFavourite = (serviceId: string) => {
     setFavouriteIds(prev => {
       const next = new Set(prev);
@@ -307,6 +316,45 @@ export default function ServicesPanel() {
         onOk: () => deleteMutation.mutate(service.serviceId),
       });
     }
+  };
+
+  const handleDeleteConnection = (connection: ConnectionItem) => {
+    modal.confirm({
+      title: 'Delete Connection',
+      content: 'Are you sure you want to delete this connection? This action cannot be undone.',
+      okText: 'Delete',
+      cancelText: 'Cancel',
+      centered: true,
+      okButtonProps: {
+        className: 'confirm-delete-btn',
+        style: { boxShadow: 'none' },
+      },
+      cancelButtonProps: {
+        type: 'text',
+        style: {
+          color: 'rgba(255,255,255,0.45)',
+          border: '1px solid rgba(255,255,255,0.45)',
+          boxShadow: 'none',
+        },
+      },
+      onOk: async () => {
+        await deleteConnectionMutation.mutateAsync({
+          databaseId: connection.databaseId,
+          connectionId: connection.connectionId,
+        });
+
+        setConnectionsByDatabase(prev => ({
+          ...prev,
+          [connection.databaseId]: (prev[connection.databaseId] ?? []).filter(
+            item => item.connectionId !== connection.connectionId,
+          ),
+        }));
+        setConnectionsErrorByDatabase(prev => ({
+          ...prev,
+          [connection.databaseId]: null,
+        }));
+      },
+    });
   };
 
   const renderServiceItem = (service: ServiceResponse) => {
@@ -437,10 +485,34 @@ export default function ServicesPanel() {
                               (connectionsByDatabase[database.databaseId] ?? []).map(connection => (
                                 <div key={connection.connectionId} style={styles.connectionItem}>
                                   <div style={styles.connectionMainRow}>
-                                    <span style={styles.connectionModeBadge}>
-                                      {connection.connectionMode === 'CONNECTION_STRING' ? 'Connection String' : 'Parameters'}
-                                    </span>
-                                    {connection.active && <span style={styles.connectionActiveBadge}>Active</span>}
+                                    <div style={styles.connectionBadges}>
+                                      <span style={styles.connectionModeBadge}>
+                                        {connection.connectionMode === 'CONNECTION_STRING' ? 'Connection String' : 'Parameters'}
+                                      </span>
+                                      {connection.active && <span style={styles.connectionActiveBadge}>Active</span>}
+                                    </div>
+                                    <Dropdown
+                                      menu={{
+                                        items: getConnectionMenuItems(),
+                                        onClick: ({ key, domEvent }) => {
+                                          domEvent.stopPropagation();
+
+                                          if (key === 'delete') {
+                                            handleDeleteConnection(connection);
+                                          }
+                                        },
+                                      }}
+                                      trigger={['click']}
+                                      placement="bottomRight"
+                                    >
+                                      <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<MoreOutlined />}
+                                        style={styles.connectionMenuBtn}
+                                        onClick={e => e.stopPropagation()}
+                                      />
+                                    </Dropdown>
                                   </div>
                                   {connection.username ? (
                                     <div style={styles.connectionRow}>
@@ -833,6 +905,12 @@ const styles: Record<string, CSSProperties> = {
   connectionMainRow: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  connectionBadges: {
+    display: 'flex',
+    alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
   },
@@ -851,6 +929,10 @@ const styles: Record<string, CSSProperties> = {
     color: '#73d13d',
     fontSize: 10,
     fontWeight: 700,
+  },
+  connectionMenuBtn: {
+    color: 'rgba(255,255,255,0.35)',
+    flexShrink: 0,
   },
   connectionRow: {
     display: 'flex',

@@ -30,3 +30,7 @@ export async function createDatabaseConnection(
   const response = await apiClient.post<ConnectionItem>(`/api/v1/databases/${databaseId}/connections`, data);
   return response.data;
 }
+
+export async function deleteDatabaseConnection(databaseId: number, connectionId: number): Promise<void> {
+  await apiClient.delete(`/api/v1/databases/${databaseId}/connections/${connectionId}`);
+}
