@@ -32,6 +32,8 @@ const METHOD_COLORS: Record<string, string> = {
   DELETE: '#f93e3e',
 };
 
+const SECTION_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export default function ServicesPanel() {
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
   const [dbExpanded, setDbExpanded] = useState(false);
@@ -41,9 +43,11 @@ export default function ServicesPanel() {
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [connectionModalDatabase, setConnectionModalDatabase] = useState<DatabaseResponse | null>(null);
   const [databaseByService, setDatabaseByService] = useState<Record<number, DatabaseResponse | null | undefined>>({});
+  const [databaseFetchedAtByService, setDatabaseFetchedAtByService] = useState<Record<number, number>>({});
   const [databaseLoadingByService, setDatabaseLoadingByService] = useState<Record<number, boolean>>({});
   const [databaseErrorByService, setDatabaseErrorByService] = useState<Record<number, string | null>>({});
   const [connectionsByDatabase, setConnectionsByDatabase] = useState<Record<number, ConnectionItem[]>>({});
+  const [connectionsFetchedAtByDatabase, setConnectionsFetchedAtByDatabase] = useState<Record<number, number>>({});
   const [connectionsLoadingByDatabase, setConnectionsLoadingByDatabase] = useState<Record<number, boolean>>({});
   const [connectionsErrorByDatabase, setConnectionsErrorByDatabase] = useState<Record<number, string | null>>({});
   const [endpointsByService, setEndpointsByService] = useState<Record<number, EndpointItem[]>>({});
@@ -120,7 +124,13 @@ export default function ServicesPanel() {
       setConnectionsExpanded(false);
     }
 
-    if (!willExpand || databaseByService[serviceId] !== undefined || databaseLoadingByService[serviceId]) {
+    const databaseFetchedAt = databaseFetchedAtByService[serviceId];
+    const hasFreshDatabase =
+      databaseByService[serviceId] !== undefined &&
+      databaseFetchedAt !== undefined &&
+      Date.now() - databaseFetchedAt < SECTION_CACHE_TTL_MS;
+
+    if (!willExpand || hasFreshDatabase || databaseLoadingByService[serviceId]) {
       return;
     }
 
@@ -130,6 +140,7 @@ export default function ServicesPanel() {
     try {
       const response = await getServiceDatabase(serviceId);
       setDatabaseByService(prev => ({ ...prev, [serviceId]: response }));
+      setDatabaseFetchedAtByService(prev => ({ ...prev, [serviceId]: Date.now() }));
     } catch {
       setDatabaseErrorByService(prev => ({
         ...prev,
@@ -144,7 +155,13 @@ export default function ServicesPanel() {
     const willExpand = !connectionsExpanded;
     setConnectionsExpanded(willExpand);
 
-    if (!willExpand || connectionsByDatabase[databaseId] !== undefined || connectionsLoadingByDatabase[databaseId]) {
+    const connectionsFetchedAt = connectionsFetchedAtByDatabase[databaseId];
+    const hasFreshConnections =
+      connectionsByDatabase[databaseId] !== undefined &&
+      connectionsFetchedAt !== undefined &&
+      Date.now() - connectionsFetchedAt < SECTION_CACHE_TTL_MS;
+
+    if (!willExpand || hasFreshConnections || connectionsLoadingByDatabase[databaseId]) {
       return;
     }
 
@@ -154,6 +171,7 @@ export default function ServicesPanel() {
     try {
       const response = await getDatabaseConnections(databaseId);
       setConnectionsByDatabase(prev => ({ ...prev, [databaseId]: response }));
+      setConnectionsFetchedAtByDatabase(prev => ({ ...prev, [databaseId]: Date.now() }));
     } catch {
       setConnectionsErrorByDatabase(prev => ({
         ...prev,
