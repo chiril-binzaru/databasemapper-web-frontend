@@ -38,6 +38,16 @@ export async function testDatabaseConnection(
   await apiClient.post(`/api/v1/databases/${databaseId}/connections/test`, data);
 }
 
+export async function connectDatabaseConnection(
+  databaseId: number,
+  connectionId: number,
+): Promise<ConnectionItem> {
+  const response = await apiClient.post<ConnectionItem>(
+    `/api/v1/databases/${databaseId}/connections/${connectionId}/connect`,
+  );
+  return response.data;
+}
+
 export async function deleteDatabaseConnection(databaseId: number, connectionId: number): Promise<void> {
   await apiClient.delete(`/api/v1/databases/${databaseId}/connections/${connectionId}`);
 }

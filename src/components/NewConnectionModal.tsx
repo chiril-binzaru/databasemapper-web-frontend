@@ -6,7 +6,7 @@ import PostgresIcon from '../assets/db/postgresql_icon.svg?react';
 import MySQLIcon from '../assets/db/mysql_icon.svg?react';
 import OracleIcon from '../assets/db/oracle_icon.svg?react';
 import MSSQLIcon from '../assets/db/microsoftsql_icon.svg?react';
-import { createDatabaseConnection, testDatabaseConnection } from '../services/connectionsApi';
+import { connectDatabaseConnection, createDatabaseConnection, testDatabaseConnection } from '../services/connectionsApi';
 import type { ConnectionItem, CreateConnectionRequest } from '../services/connectionsApi';
 import type { DatabaseResponse } from '../services/databaseApi';
 
@@ -66,6 +66,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
   const [password, setPassword] = useState('');
   const [connectionString, setConnectionString] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
+  const [createAndConnectLoading, setCreateAndConnectLoading] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,6 +77,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
     setPassword('');
     setConnectionString('');
     setCreateLoading(false);
+    setCreateAndConnectLoading(false);
     setTestLoading(false);
     setError(null);
   };
@@ -87,7 +89,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
   }, [open]);
 
   const handleCancel = () => {
-    if (createLoading || testLoading) {
+    if (createLoading || createAndConnectLoading || testLoading) {
       return;
     }
 
@@ -146,6 +148,38 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
     }
   };
 
+  const handleCreateAndConnect = async () => {
+    const payload = getPayload();
+    if (!payload) {
+      return;
+    }
+
+    setCreateAndConnectLoading(true);
+    setError(null);
+
+    try {
+      const createdConnection = await createDatabaseConnection(database.databaseId, payload);
+
+      try {
+        const connectedConnection = await connectDatabaseConnection(
+          database.databaseId,
+          createdConnection.connectionId,
+        );
+
+        onAdd(connectedConnection);
+        reset();
+        onClose();
+      } catch {
+        onAdd(createdConnection);
+        setError('Connection created but system failed to connect.');
+      }
+    } catch {
+      setError('Failed to create connection. Check that the server is running and the payload is valid.');
+    } finally {
+      setCreateAndConnectLoading(false);
+    }
+  };
+
   const handleTest = async () => {
     const payload = getPayload();
     if (!payload) {
@@ -165,7 +199,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
     }
   };
 
-  const canSubmit = !createLoading && !testLoading && (
+  const canSubmit = !createLoading && !createAndConnectLoading && !testLoading && (
     mode === 'form'
       ? !!port.trim() && !Number.isNaN(Number(port)) && !!username.trim() && !!password.trim()
       : !!connectionString.trim()
@@ -240,7 +274,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
                     value={port}
                     onChange={e => setPort(e.target.value)}
                     inputMode="numeric"
-                    disabled={mode !== 'form' || createLoading || testLoading}
+                    disabled={mode !== 'form' || createLoading || createAndConnectLoading || testLoading}
                   />
                 </div>
               </div>
@@ -257,7 +291,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
                 <Input
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  disabled={mode !== 'form' || createLoading || testLoading}
+                  disabled={mode !== 'form' || createLoading || createAndConnectLoading || testLoading}
                 />
               </div>
               <div style={styles.field}>
@@ -265,7 +299,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
                 <Input.Password
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  disabled={mode !== 'form' || createLoading || testLoading}
+                  disabled={mode !== 'form' || createLoading || createAndConnectLoading || testLoading}
                 />
               </div>
             </div>
@@ -290,7 +324,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
                   onChange={e => setConnectionString(e.target.value)}
                   rows={3}
                   style={{ fontFamily: 'monospace', fontSize: 14, resize: 'none', overflowY: 'auto' }}
-                  disabled={mode !== 'string' || createLoading || testLoading}
+                  disabled={mode !== 'string' || createLoading || createAndConnectLoading || testLoading}
                 />
               </div>
             </div>
@@ -313,7 +347,6 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
             </Button>
             <Button
               type="primary"
-              icon={<LinkOutlined />}
               style={styles.btnPrimary}
               onClick={() => void handleCreate()}
               disabled={!canSubmit}
@@ -321,7 +354,22 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
             >
               Create
             </Button>
-            <Button type="text" style={styles.btnCancel} onClick={handleCancel} disabled={createLoading || testLoading}>
+            <Button
+              type="primary"
+              icon={<LinkOutlined />}
+              style={styles.btnPrimary}
+              onClick={() => void handleCreateAndConnect()}
+              disabled={!canSubmit}
+              loading={createAndConnectLoading}
+            >
+              Create and Connect
+            </Button>
+            <Button
+              type="text"
+              style={styles.btnCancel}
+              onClick={handleCancel}
+              disabled={createLoading || createAndConnectLoading || testLoading}
+            >
               Cancel
             </Button>
           </div>
