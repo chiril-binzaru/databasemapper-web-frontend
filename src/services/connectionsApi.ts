@@ -10,7 +10,23 @@ export interface ConnectionItem {
   active: boolean;
 }
 
+export interface CreateConnectionRequest {
+  connectionMode: 'PARAMETERS' | 'CONNECTION_STRING';
+  port?: number;
+  username?: string;
+  password?: string;
+  connectionString?: string;
+}
+
 export async function getDatabaseConnections(databaseId: number): Promise<ConnectionItem[]> {
   const response = await apiClient.get<ConnectionItem[]>(`/api/v1/databases/${databaseId}/connections`);
+  return response.data;
+}
+
+export async function createDatabaseConnection(
+  databaseId: number,
+  data: CreateConnectionRequest,
+): Promise<ConnectionItem> {
+  const response = await apiClient.post<ConnectionItem>(`/api/v1/databases/${databaseId}/connections`, data);
   return response.data;
 }

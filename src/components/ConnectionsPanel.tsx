@@ -1,37 +1,26 @@
-import { useState } from 'react';
 import { Button } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
-import NewConnectionModal from './NewConnectionModal';
 
 export default function ConnectionsPanel() {
-  const [modalOpen, setModalOpen] = useState(false);
-
   return (
-    <>
-      <div style={styles.container}>
-        <div style={styles.toolbar}>
-          <Button
-            type="text"
-            icon={<PlusOutlined />}
-            size="small"
-            style={{ color: 'rgba(255,255,255,0.65)' }}
-            onClick={() => setModalOpen(true)}
-          >
-            New Connection
-          </Button>
-        </div>
-
-        <div style={styles.empty}>
-          <span style={styles.emptyText}>No database connections configured</span>
-        </div>
+    <div style={styles.container}>
+      <div style={styles.toolbar}>
+        <Button
+          type="text"
+          icon={<PlusOutlined />}
+          size="small"
+          style={{ color: 'rgba(255,255,255,0.65)' }}
+          disabled
+        >
+          New Connection
+        </Button>
       </div>
 
-      <NewConnectionModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-      />
-    </>
+      <div style={styles.empty}>
+        <span style={styles.emptyText}>No database connections configured</span>
+      </div>
+    </div>
   );
 }
 

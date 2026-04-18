@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Radio, Select, Input, Button, ConfigProvider } from 'antd';
 import { ApiOutlined, LinkOutlined } from '@ant-design/icons';
 import type { CSSProperties } from 'react';
@@ -6,6 +6,9 @@ import PostgresIcon from '../assets/db/postgresql_icon.svg?react';
 import MySQLIcon from '../assets/db/mysql_icon.svg?react';
 import OracleIcon from '../assets/db/oracle_icon.svg?react';
 import MSSQLIcon from '../assets/db/microsoftsql_icon.svg?react';
+import { createDatabaseConnection } from '../services/connectionsApi';
+import type { ConnectionItem } from '../services/connectionsApi';
+import type { DatabaseResponse } from '../services/databaseApi';
 
 type ConnectionMode = 'form' | 'string';
 
@@ -43,16 +46,104 @@ const DB_OPTIONS = [
 
 interface NewConnectionModalProps {
   open: boolean;
+  database: DatabaseResponse;
   onClose: () => void;
+  onAdd: (connection: ConnectionItem) => void;
 }
 
-export default function NewConnectionModal({ open, onClose }: NewConnectionModalProps) {
+const DATABASE_TYPE_TO_OPTION: Record<DatabaseResponse['databaseType'], string> = {
+  SQL_SERVER: 'mssql',
+  MYSQL: 'mysql',
+  ORACLE: 'oracle',
+  POSTGRESQL: 'postgres',
+};
+
+export default function NewConnectionModal({ open, database, onClose, onAdd }: NewConnectionModalProps) {
   const [mode, setMode] = useState<ConnectionMode>('form');
+  const [port, setPort] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [connectionString, setConnectionString] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setMode('form');
+    setPort('');
+    setUsername('');
+    setPassword('');
+    setConnectionString('');
+    setLoading(false);
+    setError(null);
+  };
+
+  useEffect(() => {
+    if (!open) {
+      reset();
+    }
+  }, [open]);
+
+  const handleCancel = () => {
+    if (loading) {
+      return;
+    }
+
+    reset();
+    onClose();
+  };
+
+  const handleCreate = async () => {
+    const trimmedUsername = username.trim();
+    const trimmedPassword = password.trim();
+    const trimmedConnectionString = connectionString.trim();
+    const parsedPort = Number(port);
+
+    if (mode === 'form' && (!port.trim() || Number.isNaN(parsedPort) || !trimmedUsername || !trimmedPassword)) {
+      setError('Port, username and password are required for Parameters mode.');
+      return;
+    }
+
+    if (mode === 'string' && !trimmedConnectionString) {
+      setError('Connection string is required for Connection String mode.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const connection = await createDatabaseConnection(database.databaseId, mode === 'form'
+        ? {
+            connectionMode: 'PARAMETERS',
+            port: parsedPort,
+            username: trimmedUsername,
+            password: trimmedPassword,
+          }
+        : {
+            connectionMode: 'CONNECTION_STRING',
+            connectionString: trimmedConnectionString,
+          });
+
+      onAdd(connection);
+      reset();
+      onClose();
+    } catch {
+      setError('Failed to create connection. Check that the server is running and the payload is valid.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const canCreate = !loading && (
+    mode === 'form'
+      ? !!port.trim() && !Number.isNaN(Number(port)) && !!username.trim() && !!password.trim()
+      : !!connectionString.trim()
+  );
 
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={handleCancel}
       title={<span style={styles.modalTitle}>New Connection</span>}
       width={660}
       centered
@@ -89,8 +180,10 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
                 <div style={{ ...styles.field, flex: 1 }}>
                   <label style={styles.label}>Database Type</label>
                   <Select
+                    value={DATABASE_TYPE_TO_OPTION[database.databaseType]}
                     style={{ width: '100%' }}
                     options={DB_OPTIONS}
+                    disabled
                     popupMatchSelectWidth
                     optionRender={(option) => (
                       <span style={dbOptionStyle}>
@@ -112,24 +205,37 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
                 </div>
                 <div style={{ ...styles.field, width: 90 }}>
                   <label style={styles.label}>Port</label>
-                  <Input />
+                  <Input
+                    value={port}
+                    onChange={e => setPort(e.target.value)}
+                    inputMode="numeric"
+                    disabled={mode !== 'form' || loading}
+                  />
                 </div>
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Host</label>
-                <Input />
+                <Input value={database.databaseHost} disabled />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Database Name</label>
-                <Input />
+                <Input value={database.databaseName} disabled />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Username</label>
-                <Input />
+                <Input
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  disabled={mode !== 'form' || loading}
+                />
               </div>
               <div style={styles.field}>
                 <label style={styles.label}>Password</label>
-                <Input.Password />
+                <Input.Password
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  disabled={mode !== 'form' || loading}
+                />
               </div>
             </div>
           </div>
@@ -149,12 +255,17 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
               <div style={styles.field}>
                 <label style={styles.label}>Connection String</label>
                 <Input.TextArea
+                  value={connectionString}
+                  onChange={e => setConnectionString(e.target.value)}
                   rows={3}
                   style={{ fontFamily: 'monospace', fontSize: 14, resize: 'none', overflowY: 'auto' }}
+                  disabled={mode !== 'string' || loading}
                 />
               </div>
             </div>
           </div>
+
+          {error && <div style={styles.errorText}>{error}</div>}
 
           {/* ── Footer ── */}
           <div style={styles.footerSeparator} />
@@ -164,6 +275,7 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
               icon={<ApiOutlined />}
               style={styles.btnTest}
               onClick={() => {}}
+              disabled
             >
               Test Connection
             </Button>
@@ -171,11 +283,13 @@ export default function NewConnectionModal({ open, onClose }: NewConnectionModal
               type="primary"
               icon={<LinkOutlined />}
               style={styles.btnPrimary}
-              onClick={() => {}}
+              onClick={() => void handleCreate()}
+              disabled={!canCreate}
+              loading={loading}
             >
-              Connect
+              Create only
             </Button>
-            <Button type="text" style={styles.btnCancel} onClick={onClose}>
+            <Button type="text" style={styles.btnCancel} onClick={handleCancel} disabled={loading}>
               Cancel
             </Button>
           </div>
@@ -239,6 +353,11 @@ const styles: Record<string, CSSProperties> = {
     height: 1,
     background: '#3a3a3a',
     margin: '4px 20px',
+  },
+  errorText: {
+    fontSize: 11,
+    color: '#ff4d4f',
+    padding: '0 20px 12px',
   },
   footerSeparator: {
     height: 1,

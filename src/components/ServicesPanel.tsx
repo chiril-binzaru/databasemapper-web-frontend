@@ -17,6 +17,7 @@ import { getServiceDatabase } from '../services/databaseApi';
 import type { DatabaseResponse } from '../services/databaseApi';
 import { getDatabaseConnections } from '../services/connectionsApi';
 import type { ConnectionItem } from '../services/connectionsApi';
+import NewConnectionModal from './NewConnectionModal';
 import NewEndpointModal from './NewEndpointModal';
 import SyncEndpointsModal from './SyncEndpointsModal';
 import { getServiceEndpoints, replaceServiceEndpoints, syncServiceEndpoints } from '../services/endpointsApi';
@@ -38,6 +39,7 @@ export default function ServicesPanel() {
   const [endpointsExpanded, setEndpointsExpanded] = useState(false);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
+  const [connectionModalDatabase, setConnectionModalDatabase] = useState<DatabaseResponse | null>(null);
   const [databaseByService, setDatabaseByService] = useState<Record<number, DatabaseResponse | null | undefined>>({});
   const [databaseLoadingByService, setDatabaseLoadingByService] = useState<Record<number, boolean>>({});
   const [databaseErrorByService, setDatabaseErrorByService] = useState<Record<number, string | null>>({});
@@ -410,6 +412,18 @@ export default function ServicesPanel() {
                           />
                           <ApiOutlined style={styles.nestedSectionIcon} />
                           <span style={styles.nestedSectionTitle}>Connections</span>
+                          <Tooltip title="Add Connection" placement="bottom">
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<PlusOutlined />}
+                              style={styles.subSectionAddBtn}
+                              onClick={e => {
+                                e.stopPropagation();
+                                setConnectionModalDatabase(database);
+                              }}
+                            />
+                          </Tooltip>
                         </div>
                         {connectionsExpanded && (
                           <div style={styles.nestedSectionContent}>
@@ -560,6 +574,31 @@ export default function ServicesPanel() {
           onAdd={endpoints => {
             setEndpointsByService(prev => ({ ...prev, [endpointModalServiceId]: endpoints }));
             setEndpointModalServiceId(null);
+          }}
+        />
+      )}
+
+      {connectionModalDatabase !== null && (
+        <NewConnectionModal
+          open
+          database={connectionModalDatabase}
+          onClose={() => setConnectionModalDatabase(null)}
+          onAdd={connection => {
+            setConnectionsByDatabase(prev => {
+              const existingConnections = prev[connection.databaseId] ?? [];
+              const withoutReplaced = existingConnections.filter(item => item.connectionId !== connection.connectionId);
+
+              return {
+                ...prev,
+                [connection.databaseId]: [...withoutReplaced, connection],
+              };
+            });
+            setConnectionsErrorByDatabase(prev => ({
+              ...prev,
+              [connection.databaseId]: null,
+            }));
+            setConnectionsExpanded(true);
+            setConnectionModalDatabase(null);
           }}
         />
       )}
