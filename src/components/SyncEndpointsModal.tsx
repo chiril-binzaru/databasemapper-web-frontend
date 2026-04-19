@@ -26,8 +26,10 @@ export default function SyncEndpointsModal({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
   const endpointsToAdd = useMemo(
-    () => endpoints.filter(endpoint => endpoint.status === 'TO_ADD'),
-    [endpoints],
+    () => syncStatus === 'TO_ADD_ALL'
+      ? endpoints
+      : endpoints.filter(endpoint => endpoint.status === 'TO_ADD'),
+    [endpoints, syncStatus],
   );
   const endpointsToRemove = useMemo(
     () => endpoints.filter(endpoint => endpoint.status === 'TO_REMOVE'),
@@ -41,10 +43,14 @@ export default function SyncEndpointsModal({
 
     setSelectedKeys(
       endpoints
-        .filter(endpoint => endpoint.status === 'TO_ADD' || endpoint.status === 'TO_REMOVE')
+        .filter(endpoint =>
+          syncStatus === 'TO_ADD_ALL'
+            ? true
+            : endpoint.status === 'TO_ADD' || endpoint.status === 'TO_REMOVE',
+        )
         .map(getEndpointKey),
     );
-  }, [open, endpoints]);
+  }, [open, endpoints, syncStatus]);
 
   const allAddKeys = useMemo(() => endpointsToAdd.map(getEndpointKey), [endpointsToAdd]);
   const allRemoveKeys = useMemo(() => endpointsToRemove.map(getEndpointKey), [endpointsToRemove]);

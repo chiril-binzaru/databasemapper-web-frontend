@@ -239,6 +239,29 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
     setSyncCommitLoading(true);
 
     try {
+      if (syncModalState.syncStatus === 'TO_ADD_ALL') {
+        const response = await replaceServiceEndpoints(
+          syncModalState.serviceId,
+          selectedEndpoints.map(endpoint => ({
+            httpMethod: endpoint.httpMethod,
+            path: endpoint.path,
+          })),
+        );
+
+        setEndpointsByService(prev => ({
+          ...prev,
+          [syncModalState.serviceId]: response.endpoints,
+        }));
+        setEndpointsErrorByService(prev => ({
+          ...prev,
+          [syncModalState.serviceId]: null,
+        }));
+        setEndpointsExpanded(true);
+        setExpandedServiceId(String(syncModalState.serviceId));
+        setSyncModalState(null);
+        return;
+      }
+
       const selectedKeys = new Set(selectedEndpoints.map(endpoint => `${endpoint.httpMethod}:${endpoint.path}`));
       const replacementEndpoints = syncModalState.endpoints
         .filter(endpoint => {
