@@ -68,3 +68,8 @@ export async function getEndpointMapping(endpointId: number): Promise<unknown | 
   const response = await apiClient.get<unknown | null>(`/api/v1/endpoints/${endpointId}/mapping`);
   return response.data ?? null;
 }
+
+export async function getEndpointResponseModel(endpointId: number): Promise<unknown | null> {
+  const response = await apiClient.get<unknown | null>(`/api/v1/endpoints/${endpointId}/responseModel`);
+  return response.data ?? null;
+}

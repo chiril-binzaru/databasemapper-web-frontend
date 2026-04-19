@@ -4,9 +4,13 @@ import type { CSSProperties } from 'react';
 import type { EndpointMappingTab } from '../services/endpointsApi';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
-  status: 'loading' | 'ready' | 'error';
+  mappingStatus: 'loading' | 'ready' | 'error';
   mapping: unknown | null;
-  error: string | null;
+  mappingError: string | null;
+  responseModelStatus: 'loading' | 'ready' | 'error';
+  responseModel: unknown | null;
+  responseModelError: string | null;
+  workspaceMode: 'prompt' | 'empty-grid' | 'response-model-grid';
 }
 
 interface MappingWorkspaceProps {
@@ -14,9 +18,19 @@ interface MappingWorkspaceProps {
   activeTabId: number | null;
   onSelectTab: (endpointId: number) => void;
   onCloseTab: (endpointId: number) => void;
+  onChangeWorkspaceMode: (
+    endpointId: number,
+    workspaceMode: MappingWorkspaceTab['workspaceMode'],
+  ) => void;
 }
 
 const EMPTY_GRID_ROWS = 12;
+
+interface MappingGridRow {
+  name: string;
+  type: string;
+  example: string;
+}
 
 function TabCloseButton({ onClick }: { onClick: () => void }) {
   const [hovered, setHovered] = useState(false);
@@ -78,21 +92,168 @@ function isMappingEmpty(mapping: unknown | null): boolean {
     return true;
   }
 
+  if (typeof mapping === 'string') {
+    const normalizedValue = mapping.trim().toLowerCase();
+    return normalizedValue === '' || normalizedValue === 'null' || normalizedValue === 'undefined';
+  }
+
+  if (typeof mapping === 'number' || typeof mapping === 'boolean') {
+    return false;
+  }
+
   if (Array.isArray(mapping)) {
-    return mapping.length === 0;
+    return mapping.length === 0 || mapping.every(item => isMappingEmpty(item as unknown));
   }
 
   if (typeof mapping === 'object') {
-    return Object.keys(mapping as Record<string, unknown>).length === 0;
+    const values = Object.values(mapping as Record<string, unknown>);
+    return values.length === 0 || values.every(value => isMappingEmpty(value));
   }
 
   return false;
 }
 
-export default function MappingWorkspace({ tabs, activeTabId, onSelectTab, onCloseTab }: MappingWorkspaceProps) {
+function getValueType(value: unknown): string {
+  if (Array.isArray(value)) {
+    return 'array';
+  }
+  if (value === null) {
+    return 'null';
+  }
+  return typeof value;
+}
+
+function formatExample(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0 ? '[]' : '[…]';
+  }
+  return '{…}';
+}
+
+function flattenResponseModel(value: unknown, prefix = ''): MappingGridRow[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return prefix ? [{ name: prefix, type: 'array', example: '[]' }] : [];
+    }
+
+    const sample = value[0];
+    if (sample !== null && typeof sample === 'object' && !Array.isArray(sample)) {
+      const nestedRows = flattenResponseModel(sample, prefix ? `${prefix}[]` : '[]');
+      return nestedRows.length > 0 ? nestedRows : [{ name: prefix || '[]', type: 'array<object>', example: '[…]' }];
+    }
+
+    return [{ name: prefix || '[]', type: `array<${getValueType(sample)}>`, example: '[…]' }];
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) {
+      return prefix ? [{ name: prefix, type: 'object', example: '{…}' }] : [];
+    }
+
+    return entries.flatMap(([key, nestedValue]) => {
+      const nextPrefix = prefix ? `${prefix}.${key}` : key;
+      if (nestedValue !== null && typeof nestedValue === 'object') {
+        const nestedRows = flattenResponseModel(nestedValue, nextPrefix);
+        return nestedRows.length > 0
+          ? nestedRows
+          : [{ name: nextPrefix, type: getValueType(nestedValue), example: formatExample(nestedValue) }];
+      }
+
+      return [{
+        name: nextPrefix,
+        type: getValueType(nestedValue),
+        example: formatExample(nestedValue),
+      }];
+    });
+  }
+
+  return prefix
+    ? [{
+        name: prefix,
+        type: getValueType(value),
+        example: formatExample(value),
+      }]
+    : [];
+}
+
+function MappingGrid({
+  serviceRows,
+}: {
+  serviceRows: MappingGridRow[];
+}) {
+  const serviceRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
+  const databaseRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
+
+  return (
+    <div style={styles.gridShell}>
+      <div style={styles.gridPane}>
+        <div style={styles.gridSectionHeader}>Service</div>
+        <div style={styles.gridHeaderRow}>
+          <span style={styles.gridHeaderCell}>Field</span>
+          <span style={styles.gridHeaderCell}>Type</span>
+          <span style={styles.gridHeaderCell}>Example</span>
+        </div>
+        {Array.from({ length: serviceRowCount }).map((_, index) => {
+          const row = serviceRows[index];
+
+          return (
+            <div key={`service-${index}`} style={styles.gridRow}>
+              <span style={styles.gridCellText}>{row?.name ?? ''}</span>
+              <span style={styles.gridCellText}>{row?.type ?? ''}</span>
+              <span style={styles.gridCellTextMuted}>{row?.example ?? ''}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={styles.gridDivider} />
+
+      <div style={styles.gridPane}>
+        <div style={styles.gridSectionHeader}>Database</div>
+        <div style={styles.databaseGridHeaderRow}>
+          <span style={styles.gridHeaderCell}>User</span>
+          <span style={styles.gridHeaderCell}>Table</span>
+          <span style={styles.gridHeaderCell}>Column</span>
+          <span style={styles.gridHeaderCell}>Type</span>
+        </div>
+        {Array.from({ length: databaseRowCount }).map((_, index) => (
+          <div key={`database-${index}`} style={styles.databaseGridRow}>
+            <span style={styles.gridCell} />
+            <span style={styles.gridCell} />
+            <span style={styles.gridCell} />
+            <span style={styles.gridCell} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function MappingWorkspace({
+  tabs,
+  activeTabId,
+  onSelectTab,
+  onCloseTab,
+  onChangeWorkspaceMode,
+}: MappingWorkspaceProps) {
   const safeTabs = tabs ?? [];
   const safeOnSelectTab = onSelectTab ?? (() => {});
   const safeOnCloseTab = onCloseTab ?? (() => {});
+  const safeOnChangeWorkspaceMode = onChangeWorkspaceMode ?? (() => {});
   const activeTab = safeTabs.find(tab => tab.endpointId === activeTabId) ?? null;
 
   if (safeTabs.length === 0) {
@@ -133,46 +294,47 @@ export default function MappingWorkspace({ tabs, activeTabId, onSelectTab, onClo
             </div>
           </div>
 
-          {activeTab.status === 'loading' ? (
+          {activeTab.mappingStatus === 'loading' ? (
             <div style={styles.placeholderState}>Loading mapping...</div>
-          ) : activeTab.status === 'error' ? (
-            <div style={styles.placeholderStateError}>{activeTab.error ?? 'Failed to load mapping.'}</div>
+          ) : activeTab.mappingStatus === 'error' ? (
+            <div style={styles.placeholderStateError}>{activeTab.mappingError ?? 'Failed to load mapping.'}</div>
           ) : isMappingEmpty(activeTab.mapping) ? (
-            <div style={styles.gridShell}>
-              <div style={styles.gridPane}>
-                <div style={styles.gridSectionHeader}>Service</div>
-                <div style={styles.gridHeaderRow}>
-                  <span style={styles.gridHeaderCell}>Field</span>
-                  <span style={styles.gridHeaderCell}>Type</span>
-                  <span style={styles.gridHeaderCell}>Example</span>
-                </div>
-                {Array.from({ length: EMPTY_GRID_ROWS }).map((_, index) => (
-                  <div key={`service-${index}`} style={styles.gridRow}>
-                    <span style={styles.gridCellMuted}>{index + 1}</span>
-                    <span style={styles.gridCell} />
-                    <span style={styles.gridCell} />
-                  </div>
-                ))}
+            activeTab.workspaceMode === 'prompt' ? (
+              <div style={styles.emptyMappingPrompt}>
+                <span style={styles.emptyMappingTitle}>Current endpoint has no mapping yet.</span>
+                <button
+                  type="button"
+                  style={styles.inlineAction}
+                  onClick={() => safeOnChangeWorkspaceMode(activeTab.endpointId, 'empty-grid')}
+                >
+                  Create empty mapping
+                </button>
+                <button
+                  type="button"
+                  style={styles.inlineAction}
+                  onClick={() => safeOnChangeWorkspaceMode(activeTab.endpointId, 'response-model-grid')}
+                >
+                  Create mapping with populated response model
+                </button>
+                {activeTab.responseModelStatus === 'loading' && (
+                  <span style={styles.inlineHint}>Loading response model...</span>
+                )}
+                {activeTab.responseModelStatus === 'error' && (
+                  <span style={styles.inlineHintError}>
+                    {activeTab.responseModelError ?? 'Failed to load response model.'}
+                  </span>
+                )}
+                {activeTab.responseModelStatus === 'ready' && flattenResponseModel(activeTab.responseModel).length === 0 && (
+                  <span style={styles.inlineHint}>Response model is empty, so the Service side will stay blank.</span>
+                )}
               </div>
-
-              <div style={styles.gridDivider} />
-
-              <div style={styles.gridPane}>
-                <div style={styles.gridSectionHeader}>Database</div>
-                <div style={styles.gridHeaderRow}>
-                  <span style={styles.gridHeaderCell}>Column</span>
-                  <span style={styles.gridHeaderCell}>Type</span>
-                  <span style={styles.gridHeaderCell}>Table</span>
-                </div>
-                {Array.from({ length: EMPTY_GRID_ROWS }).map((_, index) => (
-                  <div key={`database-${index}`} style={styles.gridRow}>
-                    <span style={styles.gridCellMuted}>{index + 1}</span>
-                    <span style={styles.gridCell} />
-                    <span style={styles.gridCell} />
-                  </div>
-                ))}
-              </div>
-            </div>
+            ) : (
+              <MappingGrid
+                serviceRows={activeTab.workspaceMode === 'response-model-grid'
+                  ? flattenResponseModel(activeTab.responseModel)
+                  : []}
+              />
+            )
           ) : (
             <div style={styles.placeholderState}>Mapping data loaded. Rendering populated mappings comes next.</div>
           )}
@@ -338,6 +500,37 @@ const styles: Record<string, CSSProperties> = {
     color: '#ffccc7',
     fontSize: 13,
   },
+  emptyMappingPrompt: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: '20px 22px',
+    borderRadius: 12,
+    border: '1px solid rgba(255,255,255,0.08)',
+    background: 'rgba(255,255,255,0.02)',
+  },
+  emptyMappingTitle: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 14,
+  },
+  inlineAction: {
+    border: 'none',
+    background: 'transparent',
+    color: '#69b1ff',
+    fontSize: 13,
+    padding: 0,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+  },
+  inlineHint: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 12,
+  },
+  inlineHintError: {
+    color: '#ffccc7',
+    fontSize: 12,
+  },
   gridShell: {
     flex: 1,
     minHeight: 420,
@@ -371,7 +564,7 @@ const styles: Record<string, CSSProperties> = {
   },
   gridHeaderRow: {
     display: 'grid',
-    gridTemplateColumns: '64px 1fr 1fr',
+    gridTemplateColumns: '1.4fr 0.8fr 1fr',
     height: 38,
     borderBottom: '1px solid rgba(255,255,255,0.08)',
     background: '#202020',
@@ -389,21 +582,48 @@ const styles: Record<string, CSSProperties> = {
   },
   gridRow: {
     display: 'grid',
-    gridTemplateColumns: '64px 1fr 1fr',
+    gridTemplateColumns: '1.4fr 0.8fr 1fr',
     minHeight: 40,
     borderBottom: '1px solid rgba(255,255,255,0.05)',
   },
-  gridCellMuted: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRight: '1px solid rgba(255,255,255,0.06)',
-    color: 'rgba(255,255,255,0.22)',
-    fontSize: 11,
-    background: 'rgba(255,255,255,0.02)',
+  databaseGridHeaderRow: {
+    display: 'grid',
+    gridTemplateColumns: '0.9fr 1fr 1.1fr 0.8fr',
+    height: 38,
+    borderBottom: '1px solid rgba(255,255,255,0.08)',
+    background: '#202020',
+  },
+  databaseGridRow: {
+    display: 'grid',
+    gridTemplateColumns: '0.9fr 1fr 1.1fr 0.8fr',
+    minHeight: 40,
+    borderBottom: '1px solid rgba(255,255,255,0.05)',
   },
   gridCell: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0 12px',
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
+  },
+  gridCellText: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0 12px',
+    borderRight: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.01)',
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
+  gridCellTextMuted: {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0 12px',
+    borderRight: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.01)',
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 12,
+    fontFamily: 'monospace',
   },
 };
