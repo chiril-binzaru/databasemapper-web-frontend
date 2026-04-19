@@ -29,7 +29,7 @@ const EMPTY_GRID_ROWS = 12;
 interface MappingGridRow {
   name: string;
   type: string;
-  example: string;
+  format: string;
 }
 
 function TabCloseButton({ onClick }: { onClick: () => void }) {
@@ -113,81 +113,101 @@ function isMappingEmpty(mapping: unknown | null): boolean {
   return false;
 }
 
-function getValueType(value: unknown): string {
-  if (Array.isArray(value)) {
-    return 'array';
+function getRefName(ref: unknown): string | null {
+  if (typeof ref !== 'string') {
+    return null;
   }
-  if (value === null) {
-    return 'null';
-  }
-  return typeof value;
+
+  const match = ref.match(/#\/components\/schemas\/(.+)$/);
+  return match ? match[1] : null;
 }
 
-function formatExample(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.length === 0 ? '[]' : '[…]';
-  }
-  return '{…}';
-}
-
-function flattenResponseModel(value: unknown, prefix = ''): MappingGridRow[] {
-  if (value === null || value === undefined) {
+function flattenResponseModel(value: unknown): MappingGridRow[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return [];
   }
 
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return prefix ? [{ name: prefix, type: 'array', example: '[]' }] : [];
-    }
-
-    const sample = value[0];
-    if (sample !== null && typeof sample === 'object' && !Array.isArray(sample)) {
-      const nestedRows = flattenResponseModel(sample, prefix ? `${prefix}[]` : '[]');
-      return nestedRows.length > 0 ? nestedRows : [{ name: prefix || '[]', type: 'array<object>', example: '[…]' }];
-    }
-
-    return [{ name: prefix || '[]', type: `array<${getValueType(sample)}>`, example: '[…]' }];
+  const schemas = value as Record<string, unknown>;
+  const rootSchemaName = Object.keys(schemas)[0];
+  if (!rootSchemaName) {
+    return [];
   }
 
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) {
-      return prefix ? [{ name: prefix, type: 'object', example: '{…}' }] : [];
+  const flattenSchema = (
+    schemaName: string,
+    prefix = '',
+    visited = new Set<string>(),
+  ): MappingGridRow[] => {
+    if (visited.has(schemaName)) {
+      return [];
     }
 
-    return entries.flatMap(([key, nestedValue]) => {
-      const nextPrefix = prefix ? `${prefix}.${key}` : key;
-      if (nestedValue !== null && typeof nestedValue === 'object') {
-        const nestedRows = flattenResponseModel(nestedValue, nextPrefix);
+    const schema = schemas[schemaName];
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      return [];
+    }
+
+    const properties = (schema as { properties?: unknown }).properties;
+    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+      return [];
+    }
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(schemaName);
+
+    return Object.entries(properties as Record<string, unknown>).flatMap(([fieldName, fieldSchema]) => {
+      const normalizedFieldSchema =
+        fieldSchema && typeof fieldSchema === 'object' && !Array.isArray(fieldSchema)
+          ? fieldSchema as Record<string, unknown>
+          : {};
+      const fullFieldName = prefix ? `${prefix}.${fieldName}` : fieldName;
+
+      const directRefName = getRefName(normalizedFieldSchema.$ref);
+      if (directRefName) {
+        const nestedRows = flattenSchema(directRefName, fullFieldName, nextVisited);
         return nestedRows.length > 0
           ? nestedRows
-          : [{ name: nextPrefix, type: getValueType(nestedValue), example: formatExample(nestedValue) }];
+          : [{
+              name: fullFieldName,
+              type: directRefName,
+              format: '',
+            }];
+      }
+
+      if (normalizedFieldSchema.type === 'array') {
+        const items =
+          normalizedFieldSchema.items && typeof normalizedFieldSchema.items === 'object' && !Array.isArray(normalizedFieldSchema.items)
+            ? normalizedFieldSchema.items as Record<string, unknown>
+            : null;
+        const itemRefName = items ? getRefName(items.$ref) : null;
+
+        if (itemRefName) {
+          const nestedRows = flattenSchema(itemRefName, fullFieldName, nextVisited);
+          return nestedRows.length > 0
+            ? nestedRows
+            : [{
+                name: fullFieldName,
+                type: 'array',
+                format: '',
+              }];
+        }
+
+        return [{
+          name: fullFieldName,
+          type: 'array',
+          format: items && typeof items.format === 'string' ? items.format : '',
+        }];
       }
 
       return [{
-        name: nextPrefix,
-        type: getValueType(nestedValue),
-        example: formatExample(nestedValue),
+        name: fullFieldName,
+        type: typeof normalizedFieldSchema.type === 'string' ? normalizedFieldSchema.type : '',
+        format: typeof normalizedFieldSchema.format === 'string' ? normalizedFieldSchema.format : '',
       }];
     });
-  }
+  };
 
-  return prefix
-    ? [{
-        name: prefix,
-        type: getValueType(value),
-        example: formatExample(value),
-      }]
-    : [];
+  return flattenSchema(rootSchemaName);
 }
 
 function MappingGrid({
@@ -205,7 +225,7 @@ function MappingGrid({
         <div style={styles.gridHeaderRow}>
           <span style={styles.gridHeaderCell}>Field</span>
           <span style={styles.gridHeaderCell}>Type</span>
-          <span style={styles.gridHeaderCell}>Example</span>
+          <span style={styles.gridHeaderCell}>Format</span>
         </div>
         {Array.from({ length: serviceRowCount }).map((_, index) => {
           const row = serviceRows[index];
@@ -214,7 +234,7 @@ function MappingGrid({
             <div key={`service-${index}`} style={styles.gridRow}>
               <span style={styles.gridCellText}>{row?.name ?? ''}</span>
               <span style={styles.gridCellText}>{row?.type ?? ''}</span>
-              <span style={styles.gridCellTextMuted}>{row?.example ?? ''}</span>
+              <span style={styles.gridCellTextMuted}>{row?.format ?? ''}</span>
             </div>
           );
         })}
