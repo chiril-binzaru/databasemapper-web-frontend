@@ -18,6 +18,7 @@ interface OpenMappingTab extends EndpointMappingTab {
 function AppLayout() {
   const [openPanel, setOpenPanel] = useState<PanelType>(null);
   const [pinned, setPinned] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(576);
   const [mappingTabs, setMappingTabs] = useState<OpenMappingTab[]>([]);
   const [activeMappingTabId, setActiveMappingTabId] = useState<number | null>(null);
 
@@ -106,9 +107,11 @@ function AppLayout() {
           <AppSidePanel
             panel={openPanel}
             pinned={pinned}
+            width={panelWidth}
             onClose={handleClose}
             onTogglePin={() => setPinned(p => !p)}
             onOpenMapping={handleOpenMapping}
+            onResize={setPanelWidth}
           />
         )}
         <div style={styles.main}>
