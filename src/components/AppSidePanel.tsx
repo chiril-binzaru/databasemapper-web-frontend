@@ -1,7 +1,7 @@
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import PinIcon from '../assets/pin_icon.svg?react';
 import { Tooltip, Typography } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PanelType } from '../types/panel';
 import ServicesPanel from './ServicesPanel';
@@ -12,9 +12,11 @@ import type { EndpointMappingTab } from '../services/endpointsApi';
 interface AppSidePanelProps {
   panel: PanelType;
   pinned: boolean;
+  width: number;
   onClose: () => void;
   onTogglePin: () => void;
   onOpenMapping: (mapping: EndpointMappingTab) => void;
+  onResize: (nextWidth: number) => void;
 }
 
 interface ActionBtnProps {
@@ -49,15 +51,59 @@ function ActionBtn({ tooltip, active, onClick, children }: ActionBtnProps) {
   );
 }
 
-export default function AppSidePanel({ panel, pinned, onClose, onTogglePin, onOpenMapping }: AppSidePanelProps) {
+const MIN_PANEL_WIDTH = 420;
+const MAX_PANEL_WIDTH = 920;
+
+export default function AppSidePanel({
+  panel,
+  pinned,
+  width,
+  onClose,
+  onTogglePin,
+  onOpenMapping,
+  onResize,
+}: AppSidePanelProps) {
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!isResizing) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, event.clientX));
+      onResize(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, onResize]);
 
   if (!panel) return null;
 
   return (
     <>
-      <div style={pinned ? styles.panelPinned : styles.panelFloat}>
+      <div
+        style={{
+          ...(pinned ? styles.panelPinned : styles.panelFloat),
+          width,
+        }}
+      >
         <div style={styles.header}>
           <Typography.Text style={styles.title}>Services</Typography.Text>
           <div style={styles.actions}>
@@ -75,6 +121,13 @@ export default function AppSidePanel({ panel, pinned, onClose, onTogglePin, onOp
         <div style={styles.content}>
           <ServicesPanel onOpenMapping={onOpenMapping} />
         </div>
+        <div
+          style={styles.resizeHandle}
+          onMouseDown={event => {
+            event.preventDefault();
+            setIsResizing(true);
+          }}
+        />
       </div>
 
       <NewServiceModal
@@ -87,11 +140,11 @@ export default function AppSidePanel({ panel, pinned, onClose, onTogglePin, onOp
 }
 
 const base: CSSProperties = {
-  width: 576,
   background: '#1f1f1f',
   borderRight: '1px solid #2a2a2a',
   display: 'flex',
   flexDirection: 'column',
+  minWidth: 0,
 };
 
 const styles: Record<string, CSSProperties> = {
@@ -141,5 +194,14 @@ const styles: Record<string, CSSProperties> = {
   content: {
     flex: 1,
     overflowY: 'auto',
+  },
+  resizeHandle: {
+    position: 'absolute',
+    top: 0,
+    right: -3,
+    width: 7,
+    bottom: 0,
+    cursor: 'ew-resize',
+    zIndex: 20,
   },
 };
