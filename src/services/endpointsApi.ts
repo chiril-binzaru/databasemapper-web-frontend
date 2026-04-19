@@ -6,6 +6,14 @@ export interface EndpointItem {
   endpointPath: string;
 }
 
+export interface EndpointMappingTab {
+  endpointId: number;
+  serviceId: number;
+  serviceName: string;
+  httpMethod: string;
+  endpointPath: string;
+}
+
 export interface EndpointsResponse {
   serviceId: number;
   endpoints: EndpointItem[];
@@ -54,4 +62,9 @@ export async function replaceServiceEndpoints(
 export async function syncServiceEndpoints(serviceId: number): Promise<SyncEndpointsResponse> {
   const response = await apiClient.post<SyncEndpointsResponse>(`/api/v1/services/${serviceId}/endpoints/sync`);
   return response.data;
+}
+
+export async function getEndpointMapping(endpointId: number): Promise<unknown | null> {
+  const response = await apiClient.get<unknown | null>(`/api/v1/endpoints/${endpointId}/mapping`);
+  return response.data ?? null;
 }

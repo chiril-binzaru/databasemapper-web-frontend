@@ -3,14 +3,23 @@ import { App as AntApp, ConfigProvider, theme } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppSidebar from './components/AppSidebar';
 import AppSidePanel from './components/AppSidePanel';
-import AppHeader from './components/AppHeader';
 import MappingWorkspace from './components/MappingWorkspace';
 import type { PanelType } from './types/panel';
 import type { CSSProperties } from 'react';
+import { getEndpointMapping } from './services/endpointsApi';
+import type { EndpointMappingTab } from './services/endpointsApi';
+
+interface OpenMappingTab extends EndpointMappingTab {
+  status: 'loading' | 'ready' | 'error';
+  mapping: unknown | null;
+  error: string | null;
+}
 
 function AppLayout() {
   const [openPanel, setOpenPanel] = useState<PanelType>(null);
   const [pinned, setPinned] = useState(false);
+  const [mappingTabs, setMappingTabs] = useState<OpenMappingTab[]>([]);
+  const [activeMappingTabId, setActiveMappingTabId] = useState<number | null>(null);
 
   const handleToggle = (panel: NonNullable<PanelType>) => {
     setOpenPanel(prev => (prev === panel ? null : panel));
@@ -19,6 +28,74 @@ function AppLayout() {
   const handleClose = () => {
     setOpenPanel(null);
     setPinned(false);
+  };
+
+  const handleOpenMapping = (mappingTab: EndpointMappingTab) => {
+    let shouldFetch = false;
+
+    setMappingTabs(prev => {
+      const existingTab = prev.find(tab => tab.endpointId === mappingTab.endpointId);
+
+      if (existingTab) {
+        return prev;
+      }
+
+      shouldFetch = true;
+
+      return [
+        ...prev,
+        {
+          ...mappingTab,
+          status: 'loading',
+          mapping: null,
+          error: null,
+        },
+      ];
+    });
+    setActiveMappingTabId(mappingTab.endpointId);
+
+    if (!shouldFetch) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const mapping = await getEndpointMapping(mappingTab.endpointId);
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === mappingTab.endpointId
+            ? { ...tab, status: 'ready', mapping, error: null }
+            : tab
+        )));
+      } catch {
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === mappingTab.endpointId
+            ? { ...tab, status: 'error', error: 'Failed to load mapping for this endpoint.' }
+            : tab
+        )));
+      }
+    })();
+  };
+
+  const handleCloseMappingTab = (endpointId: number) => {
+    setMappingTabs(prev => {
+      const nextTabs = prev.filter(tab => tab.endpointId !== endpointId);
+
+      setActiveMappingTabId(currentActiveId => {
+        if (currentActiveId !== endpointId) {
+          return currentActiveId;
+        }
+
+        if (nextTabs.length === 0) {
+          return null;
+        }
+
+        const closedIndex = prev.findIndex(tab => tab.endpointId === endpointId);
+        const nextActiveTab = nextTabs[Math.min(closedIndex, nextTabs.length - 1)];
+        return nextActiveTab.endpointId;
+      });
+
+      return nextTabs;
+    });
   };
 
   return (
@@ -31,11 +108,16 @@ function AppLayout() {
             pinned={pinned}
             onClose={handleClose}
             onTogglePin={() => setPinned(p => !p)}
+            onOpenMapping={handleOpenMapping}
           />
         )}
         <div style={styles.main}>
-          <AppHeader currentMapping={undefined} currentConnection={undefined} currentSwagger={undefined} />
-          <MappingWorkspace />
+          <MappingWorkspace
+            tabs={mappingTabs}
+            activeTabId={activeMappingTabId}
+            onSelectTab={setActiveMappingTabId}
+            onCloseTab={handleCloseMappingTab}
+          />
         </div>
       </div>
     </div>

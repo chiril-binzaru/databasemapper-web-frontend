@@ -23,6 +23,7 @@ import SyncEndpointsModal from './SyncEndpointsModal';
 import { getServiceEndpoints, replaceServiceEndpoints, syncServiceEndpoints } from '../services/endpointsApi';
 import type { EndpointItem } from '../services/endpointsApi';
 import type { EndpointSyncItem } from '../services/endpointsApi';
+import type { EndpointMappingTab } from '../services/endpointsApi';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#61affe',
@@ -34,11 +35,16 @@ const METHOD_COLORS: Record<string, string> = {
 
 const SECTION_CACHE_TTL_MS = 5 * 60 * 1000;
 
-export default function ServicesPanel() {
+interface ServicesPanelProps {
+  onOpenMapping: (mapping: EndpointMappingTab) => void;
+}
+
+export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
   const [dbExpanded, setDbExpanded] = useState(false);
   const [connectionsExpanded, setConnectionsExpanded] = useState(false);
   const [endpointsExpanded, setEndpointsExpanded] = useState(false);
+  const [selectedEndpointId, setSelectedEndpointId] = useState<number | null>(null);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [connectionModalDatabase, setConnectionModalDatabase] = useState<DatabaseResponse | null>(null);
@@ -622,10 +628,31 @@ export default function ServicesPanel() {
                     <span style={styles.emptyHint}>No endpoint was added for this service</span>
                   ) : (
                     (endpointsByService[service.serviceId] ?? []).map(ep => (
-                      <div key={ep.endpointId} style={styles.endpointItem}>
+                      <button
+                        key={ep.endpointId}
+                        type="button"
+                        style={{
+                          ...styles.endpointItem,
+                          ...(selectedEndpointId === ep.endpointId ? styles.endpointItemSelected : null),
+                        }}
+                        onClick={() => {
+                          setSelectedEndpointId(ep.endpointId);
+                        }}
+                        onDoubleClick={event => {
+                          event.stopPropagation();
+                          setSelectedEndpointId(ep.endpointId);
+                          onOpenMapping({
+                            endpointId: ep.endpointId,
+                            serviceId: service.serviceId,
+                            serviceName: service.serviceName,
+                            httpMethod: ep.httpMethod,
+                            endpointPath: ep.endpointPath,
+                          });
+                        }}
+                      >
                         <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[ep.httpMethod] ?? 'rgba(255,255,255,0.5)' }}>{ep.httpMethod}</span>
                         <span style={styles.endpointPath}>{ep.endpointPath}</span>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -988,7 +1015,15 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '3px 0',
+    padding: '5px 8px',
+    width: '100%',
+    border: 'none',
+    background: 'transparent',
+    textAlign: 'left',
+    borderRadius: 6,
+  },
+  endpointItemSelected: {
+    background: 'rgba(64,150,255,0.14)',
   },
   endpointMethod: {
     fontSize: 10,

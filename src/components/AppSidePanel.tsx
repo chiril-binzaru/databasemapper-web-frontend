@@ -7,12 +7,14 @@ import type { PanelType } from '../types/panel';
 import ServicesPanel from './ServicesPanel';
 import NewServiceModal from './NewServiceModal';
 import { useQueryClient } from '@tanstack/react-query';
+import type { EndpointMappingTab } from '../services/endpointsApi';
 
 interface AppSidePanelProps {
   panel: PanelType;
   pinned: boolean;
   onClose: () => void;
   onTogglePin: () => void;
+  onOpenMapping: (mapping: EndpointMappingTab) => void;
 }
 
 interface ActionBtnProps {
@@ -47,7 +49,7 @@ function ActionBtn({ tooltip, active, onClick, children }: ActionBtnProps) {
   );
 }
 
-export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: AppSidePanelProps) {
+export default function AppSidePanel({ panel, pinned, onClose, onTogglePin, onOpenMapping }: AppSidePanelProps) {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -71,7 +73,7 @@ export default function AppSidePanel({ panel, pinned, onClose, onTogglePin }: Ap
           </div>
         </div>
         <div style={styles.content}>
-          <ServicesPanel />
+          <ServicesPanel onOpenMapping={onOpenMapping} />
         </div>
       </div>
 
