@@ -1,7 +1,9 @@
-import { CloseOutlined } from '@ant-design/icons';
-import { useState } from 'react';
+import { CloseOutlined, DownOutlined } from '@ant-design/icons';
+import { Select } from 'antd';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { EndpointMappingTab } from '../services/endpointsApi';
+import type { DatabaseResponse } from '../services/databaseApi';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -10,6 +12,12 @@ interface MappingWorkspaceTab extends EndpointMappingTab {
   responseModelStatus: 'loading' | 'ready' | 'error';
   responseModel: unknown | null;
   responseModelError: string | null;
+  databaseStatus: 'loading' | 'ready' | 'error';
+  database: DatabaseResponse | null;
+  databaseError: string | null;
+  schemasStatus: 'loading' | 'ready' | 'error';
+  schemas: string[];
+  schemasError: string | null;
   workspaceMode: 'prompt' | 'empty-grid' | 'response-model-grid';
 }
 
@@ -30,6 +38,127 @@ interface MappingGridRow {
   name: string;
   type: string;
   format: string;
+}
+
+function SchemaCell({
+  value,
+  placeholder,
+  disabled,
+  options,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  disabled: boolean;
+  options: Array<{ label: string; value: string }>;
+  onChange: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const stopEditing = () => {
+    setEditing(false);
+    setDropdownOpen(false);
+  };
+
+  if (editing && !disabled) {
+    return (
+      <div style={styles.schemaEditorShell}>
+        <Select
+          size="small"
+          autoFocus
+          showSearch
+          bordered={false}
+          value={value || undefined}
+          searchValue={value}
+          options={options}
+          open={dropdownOpen}
+          optionFilterProp="label"
+          filterOption={(input, option) =>
+            String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+          onSearch={nextValue => {
+            onChange(nextValue);
+          }}
+          onChange={nextValue => {
+            onChange(nextValue);
+            stopEditing();
+          }}
+          onBlur={() => stopEditing()}
+          onOpenChange={open => {
+            setDropdownOpen(open);
+          }}
+          suffixIcon={null}
+          style={styles.schemaSelectEditing}
+        />
+        <button
+          type="button"
+          style={styles.schemaEditorArrowButton}
+          onMouseDown={event => {
+            event.preventDefault();
+          }}
+          onClick={() => {
+            setDropdownOpen(open => !open);
+          }}
+        >
+          <DownOutlined />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role={disabled ? undefined : 'button'}
+      tabIndex={disabled ? -1 : 0}
+      style={{
+        ...styles.schemaCellButton,
+        ...(disabled ? styles.schemaCellButtonDisabled : null),
+      }}
+      onClick={() => {
+        if (!disabled) {
+          setEditing(true);
+          setDropdownOpen(false);
+        }
+      }}
+      onKeyDown={event => {
+        if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          setEditing(true);
+          setDropdownOpen(false);
+        }
+      }}
+    >
+      <span
+        style={{
+          ...styles.schemaCellLabel,
+          ...(value ? styles.schemaCellLabelFilled : styles.schemaCellLabelPlaceholder),
+        }}
+      >
+        {value}
+      </span>
+      <span style={styles.schemaCellArrow}>
+        <button
+          type="button"
+          style={styles.schemaArrowButton}
+          tabIndex={-1}
+          onMouseDown={event => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={event => {
+            event.stopPropagation();
+            if (!disabled) {
+              setEditing(true);
+              setDropdownOpen(true);
+            }
+          }}
+        >
+          <DownOutlined />
+        </button>
+      </span>
+    </div>
+  );
 }
 
 function TabCloseButton({ onClick }: { onClick: () => void }) {
@@ -212,11 +341,34 @@ function flattenResponseModel(value: unknown): MappingGridRow[] {
 
 function MappingGrid({
   serviceRows,
+  schemasStatus,
+  schemas,
+  schemasError,
 }: {
   serviceRows: MappingGridRow[];
+  schemasStatus: MappingWorkspaceTab['schemasStatus'];
+  schemas: string[];
+  schemasError: string | null;
 }) {
   const serviceRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const databaseRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
+  const [selectedSchemas, setSelectedSchemas] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSelectedSchemas(prev => Array.from({ length: databaseRowCount }, (_, index) => prev[index] ?? ''));
+  }, [databaseRowCount]);
+
+  const schemaOptions = schemas.map(schema => ({
+    label: schema,
+    value: schema,
+  }));
+  const schemaPlaceholder = schemasStatus === 'loading'
+    ? 'Loading schemas'
+    : schemasStatus === 'error'
+      ? 'Schemas unavailable'
+      : schemas.length === 0
+        ? 'No schemas'
+        : 'Select schema';
 
   return (
     <div style={styles.gridShell}>
@@ -245,19 +397,36 @@ function MappingGrid({
       <div style={styles.gridPane}>
         <div style={styles.gridSectionHeader}>Database</div>
         <div style={styles.databaseGridHeaderRow}>
-          <span style={styles.gridHeaderCell}>User</span>
+          <span style={styles.gridHeaderCell}>Schema</span>
           <span style={styles.gridHeaderCell}>Table</span>
           <span style={styles.gridHeaderCell}>Column</span>
           <span style={styles.gridHeaderCell}>Type</span>
         </div>
         {Array.from({ length: databaseRowCount }).map((_, index) => (
           <div key={`database-${index}`} style={styles.databaseGridRow}>
-            <span style={styles.gridCell} />
+            <span style={styles.schemaGridCell}>
+              <SchemaCell
+                value={selectedSchemas[index] ?? ''}
+                placeholder={schemaPlaceholder}
+                options={schemaOptions}
+                disabled={schemasStatus !== 'ready' || schemas.length === 0}
+                onChange={value => {
+                  setSelectedSchemas(prev => {
+                    const next = [...prev];
+                    next[index] = value;
+                    return next;
+                  });
+                }}
+              />
+            </span>
             <span style={styles.gridCell} />
             <span style={styles.gridCell} />
             <span style={styles.gridCell} />
           </div>
         ))}
+        {schemasStatus === 'error' && schemasError && (
+          <div style={styles.databaseGridNote}>{schemasError}</div>
+        )}
       </div>
     </div>
   );
@@ -350,9 +519,13 @@ export default function MappingWorkspace({
               </div>
             ) : (
               <MappingGrid
+                key={`${activeTab.endpointId}-${activeTab.workspaceMode}`}
                 serviceRows={activeTab.workspaceMode === 'response-model-grid'
                   ? flattenResponseModel(activeTab.responseModel)
                   : []}
+                schemasStatus={activeTab.schemasStatus}
+                schemas={activeTab.schemas}
+                schemasError={activeTab.schemasError}
               />
             )
           ) : (
@@ -645,5 +818,100 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.45)',
     fontSize: 12,
     fontFamily: 'monospace',
+  },
+  schemaSelectEditing: {
+    width: '100%',
+    height: '100%',
+    flex: 1,
+  },
+  schemaEditorShell: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'stretch',
+    padding: '0 12px',
+    background: 'rgba(255,255,255,0.01)',
+  },
+  schemaGridCell: {
+    display: 'flex',
+    alignItems: 'stretch',
+    padding: 0,
+    borderRight: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.01)',
+    minHeight: 40,
+  },
+  schemaCellButton: {
+    width: '100%',
+    minHeight: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    border: 'none',
+    background: 'transparent',
+    padding: '0 12px',
+    cursor: 'text',
+    textAlign: 'left',
+    outline: 'none',
+  },
+  schemaArrowButton: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    background: 'transparent',
+    color: 'inherit',
+    padding: 0,
+    cursor: 'pointer',
+  },
+  schemaEditorArrowButton: {
+    width: 28,
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    background: 'transparent',
+    color: 'rgba(255,255,255,0.45)',
+    padding: 0,
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  schemaCellButtonDisabled: {
+    cursor: 'not-allowed',
+  },
+  schemaCellLabel: {
+    minWidth: 0,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
+    fontSize: 12,
+  },
+  schemaCellLabelFilled: {
+    color: 'rgba(255,255,255,0.74)',
+    fontFamily: 'monospace',
+  },
+  schemaCellLabelPlaceholder: {
+    color: 'rgba(255,255,255,0.32)',
+    minHeight: 16,
+  },
+  schemaCellArrow: {
+    width: 28,
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 11,
+  },
+  databaseGridNote: {
+    padding: '10px 12px',
+    borderTop: '1px solid rgba(255,255,255,0.05)',
+    color: '#ffccc7',
+    fontSize: 12,
+    background: 'rgba(255,120,117,0.04)',
   },
 };

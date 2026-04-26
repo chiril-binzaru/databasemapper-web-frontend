@@ -8,6 +8,8 @@ import type { PanelType } from './types/panel';
 import type { CSSProperties } from 'react';
 import { getEndpointMapping, getEndpointResponseModel } from './services/endpointsApi';
 import type { EndpointMappingTab } from './services/endpointsApi';
+import { getDatabaseSchemas, getServiceDatabase } from './services/databaseApi';
+import type { DatabaseResponse } from './services/databaseApi';
 
 interface OpenMappingTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -16,6 +18,12 @@ interface OpenMappingTab extends EndpointMappingTab {
   responseModelStatus: 'loading' | 'ready' | 'error';
   responseModel: unknown | null;
   responseModelError: string | null;
+  databaseStatus: 'loading' | 'ready' | 'error';
+  database: DatabaseResponse | null;
+  databaseError: string | null;
+  schemasStatus: 'loading' | 'ready' | 'error';
+  schemas: string[];
+  schemasError: string | null;
   workspaceMode: 'prompt' | 'empty-grid' | 'response-model-grid';
 }
 
@@ -57,6 +65,12 @@ function AppLayout() {
           responseModelStatus: 'loading',
           responseModel: null,
           responseModelError: null,
+          databaseStatus: 'loading',
+          database: null,
+          databaseError: null,
+          schemasStatus: 'loading',
+          schemas: [],
+          schemasError: null,
           workspaceMode: 'prompt',
         },
       ];
@@ -68,10 +82,16 @@ function AppLayout() {
     }
 
     void (async () => {
-      const [mappingResult, responseModelResult] = await Promise.allSettled([
+      const [mappingResult, responseModelResult, databaseResult] = await Promise.allSettled([
         getEndpointMapping(mappingTab.endpointId),
         getEndpointResponseModel(mappingTab.endpointId),
+        getServiceDatabase(mappingTab.serviceId),
       ]);
+      const resolvedDatabase = databaseResult.status === 'fulfilled' ? databaseResult.value : null;
+
+      const schemasResult = resolvedDatabase
+        ? await Promise.allSettled([getDatabaseSchemas(resolvedDatabase.databaseId)])
+        : null;
 
       setMappingTabs(prev => prev.map(tab => (
         tab.endpointId === mappingTab.endpointId
@@ -87,6 +107,22 @@ function AppLayout() {
               responseModelError: responseModelResult.status === 'fulfilled'
                 ? null
                 : 'Failed to load response model for this endpoint.',
+              databaseStatus: databaseResult.status === 'fulfilled' ? 'ready' : 'error',
+              database: resolvedDatabase,
+              databaseError: databaseResult.status === 'fulfilled'
+                ? null
+                : 'Failed to load database details for this service.',
+              schemasStatus: schemasResult
+                ? schemasResult[0].status === 'fulfilled' ? 'ready' : 'error'
+                : 'ready',
+              schemas: schemasResult && schemasResult[0].status === 'fulfilled'
+                ? schemasResult[0].value
+                : [],
+              schemasError: schemasResult
+                ? schemasResult[0].status === 'fulfilled'
+                  ? null
+                  : 'Failed to load database schemas.'
+                : null,
             }
           : tab
       )));
