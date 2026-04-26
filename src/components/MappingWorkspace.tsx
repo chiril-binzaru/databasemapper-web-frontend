@@ -1,6 +1,6 @@
 import { CloseOutlined, DownOutlined } from '@ant-design/icons';
 import { Select } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { EndpointMappingTab } from '../services/endpointsApi';
 import type { DatabaseResponse } from '../services/databaseApi';
@@ -42,53 +42,82 @@ interface MappingGridRow {
 
 function SchemaCell({
   value,
-  placeholder,
   disabled,
   options,
   onChange,
 }: {
   value: string;
-  placeholder: string;
   disabled: boolean;
   options: Array<{ label: string; value: string }>;
   onChange: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const blurTimeoutRef = useRef<number | null>(null);
 
   const stopEditing = () => {
+    if (blurTimeoutRef.current !== null) {
+      window.clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
     setEditing(false);
     setDropdownOpen(false);
+    setSearchValue('');
   };
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (editing) {
+      setSearchValue(value);
+    }
+  }, [editing, value]);
 
   if (editing && !disabled) {
     return (
       <div style={styles.schemaEditorShell}>
         <Select
-          size="small"
           autoFocus
-          showSearch
-          bordered={false}
-          value={value || undefined}
-          searchValue={value}
-          options={options}
           open={dropdownOpen}
-          optionFilterProp="label"
-          filterOption={(input, option) =>
-            String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-          }
+          value={value || undefined}
+          searchValue={searchValue}
+          showSearch={{
+            filterOption: (input, option) =>
+              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase()),
+          }}
+          placeholder=""
+          options={options}
+          variant="borderless"
+          suffixIcon={null}
           onSearch={nextValue => {
-            onChange(nextValue);
+            setSearchValue(nextValue);
           }}
           onChange={nextValue => {
             onChange(nextValue);
             stopEditing();
           }}
-          onBlur={() => stopEditing()}
+          onBlur={() => {
+            blurTimeoutRef.current = window.setTimeout(() => {
+              stopEditing();
+            }, 0);
+          }}
+          onFocus={() => {
+            if (blurTimeoutRef.current !== null) {
+              window.clearTimeout(blurTimeoutRef.current);
+              blurTimeoutRef.current = null;
+            }
+          }}
           onOpenChange={open => {
             setDropdownOpen(open);
           }}
-          suffixIcon={null}
+          className="schema-inline-select"
           style={styles.schemaSelectEditing}
         />
         <button
@@ -126,6 +155,7 @@ function SchemaCell({
           event.preventDefault();
           setEditing(true);
           setDropdownOpen(false);
+          setSearchValue(value);
         }
       }}
     >
@@ -151,6 +181,7 @@ function SchemaCell({
             if (!disabled) {
               setEditing(true);
               setDropdownOpen(true);
+              setSearchValue(value);
             }
           }}
         >
@@ -362,13 +393,6 @@ function MappingGrid({
     label: schema,
     value: schema,
   }));
-  const schemaPlaceholder = schemasStatus === 'loading'
-    ? 'Loading schemas'
-    : schemasStatus === 'error'
-      ? 'Schemas unavailable'
-      : schemas.length === 0
-        ? 'No schemas'
-        : 'Select schema';
 
   return (
     <div style={styles.gridShell}>
@@ -407,7 +431,6 @@ function MappingGrid({
             <span style={styles.schemaGridCell}>
               <SchemaCell
                 value={selectedSchemas[index] ?? ''}
-                placeholder={schemaPlaceholder}
                 options={schemaOptions}
                 disabled={schemasStatus !== 'ready' || schemas.length === 0}
                 onChange={value => {
@@ -819,12 +842,8 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontFamily: 'monospace',
   },
-  schemaSelectEditing: {
-    width: '100%',
-    height: '100%',
-    flex: 1,
-  },
   schemaEditorShell: {
+    position: 'relative',
     width: '100%',
     height: '100%',
     display: 'flex',
