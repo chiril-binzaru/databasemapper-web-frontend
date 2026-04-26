@@ -20,3 +20,8 @@ export async function getServiceDatabase(serviceId: number): Promise<DatabaseRes
     throw error;
   }
 }
+
+export async function getDatabaseSchemas(databaseId: number): Promise<string[]> {
+  const response = await apiClient.get<string[]>(`/api/v1/databases/${databaseId}/schemas`);
+  return response.data ?? [];
+}
