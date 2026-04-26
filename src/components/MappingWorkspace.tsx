@@ -776,7 +776,7 @@ const styles: Record<string, CSSProperties> = {
   gridRow: {
     display: 'grid',
     gridTemplateColumns: '1.4fr 0.8fr 1fr',
-    minHeight: 40,
+    height: 40,
     borderBottom: '1px solid rgba(255,255,255,0.05)',
   },
   databaseGridHeaderRow: {
@@ -789,7 +789,7 @@ const styles: Record<string, CSSProperties> = {
   databaseGridRow: {
     display: 'grid',
     gridTemplateColumns: '0.9fr 1fr 1.1fr 0.8fr',
-    minHeight: 40,
+    height: 40,
     borderBottom: '1px solid rgba(255,255,255,0.05)',
   },
   gridCell: {
@@ -838,11 +838,10 @@ const styles: Record<string, CSSProperties> = {
     padding: 0,
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
-    minHeight: 40,
   },
   schemaCellButton: {
     width: '100%',
-    minHeight: '100%',
+    height: '100%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -884,6 +883,7 @@ const styles: Record<string, CSSProperties> = {
   },
   schemaCellLabel: {
     minWidth: 0,
+    lineHeight: '40px',
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
@@ -895,7 +895,7 @@ const styles: Record<string, CSSProperties> = {
   },
   schemaCellLabelPlaceholder: {
     color: 'rgba(255,255,255,0.32)',
-    minHeight: 16,
+    lineHeight: '40px',
   },
   schemaCellArrow: {
     width: 28,
