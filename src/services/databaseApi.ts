@@ -25,3 +25,10 @@ export async function getDatabaseSchemas(databaseId: number): Promise<string[]> 
   const response = await apiClient.get<string[]>(`/api/v1/databases/${databaseId}/schemas`);
   return response.data ?? [];
 }
+
+export async function getDatabaseTables(databaseId: number, schemaName: string): Promise<string[]> {
+  const response = await apiClient.get<string[]>(
+    `/api/v1/databases/${databaseId}/schemas/${encodeURIComponent(schemaName)}/tables`,
+  );
+  return response.data ?? [];
+}

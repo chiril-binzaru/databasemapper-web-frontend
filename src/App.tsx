@@ -8,7 +8,7 @@ import type { PanelType } from './types/panel';
 import type { CSSProperties } from 'react';
 import { getEndpointMapping, getEndpointResponseModel } from './services/endpointsApi';
 import type { EndpointMappingTab } from './services/endpointsApi';
-import { getDatabaseSchemas, getServiceDatabase } from './services/databaseApi';
+import { getDatabaseSchemas, getDatabaseTables, getServiceDatabase } from './services/databaseApi';
 import type { DatabaseResponse } from './services/databaseApi';
 
 interface OpenMappingTab extends EndpointMappingTab {
@@ -24,6 +24,9 @@ interface OpenMappingTab extends EndpointMappingTab {
   schemasStatus: 'loading' | 'ready' | 'error';
   schemas: string[];
   schemasError: string | null;
+  tablesBySchema: Record<string, string[]>;
+  tablesStatusBySchema: Record<string, 'idle' | 'loading' | 'ready' | 'error'>;
+  tablesErrorBySchema: Record<string, string | null>;
   workspaceMode: 'prompt' | 'empty-grid' | 'response-model-grid';
 }
 
@@ -71,6 +74,9 @@ function AppLayout() {
           schemasStatus: 'loading',
           schemas: [],
           schemasError: null,
+          tablesBySchema: {},
+          tablesStatusBySchema: {},
+          tablesErrorBySchema: {},
           workspaceMode: 'prompt',
         },
       ];
@@ -162,6 +168,88 @@ function AppLayout() {
     )));
   };
 
+  const handleLoadTables = (endpointId: number, schemaName: string) => {
+    if (!schemaName) {
+      return;
+    }
+
+    let databaseId: number | null = null;
+    let shouldFetch = false;
+
+    setMappingTabs(prev => prev.map(tab => {
+      if (tab.endpointId !== endpointId) {
+        return tab;
+      }
+
+      databaseId = tab.database?.databaseId ?? null;
+      const currentStatus = tab.tablesStatusBySchema[schemaName] ?? 'idle';
+
+      if (!databaseId || currentStatus !== 'idle') {
+        return tab;
+      }
+
+      shouldFetch = true;
+
+      return {
+        ...tab,
+        tablesStatusBySchema: {
+          ...tab.tablesStatusBySchema,
+          [schemaName]: 'loading',
+        },
+        tablesErrorBySchema: {
+          ...tab.tablesErrorBySchema,
+          [schemaName]: null,
+        },
+      };
+    }));
+
+    if (!shouldFetch || !databaseId) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const tables = await getDatabaseTables(databaseId, schemaName);
+
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === endpointId
+            ? {
+                ...tab,
+                tablesBySchema: {
+                  ...tab.tablesBySchema,
+                  [schemaName]: tables,
+                },
+                tablesStatusBySchema: {
+                  ...tab.tablesStatusBySchema,
+                  [schemaName]: 'ready',
+                },
+                tablesErrorBySchema: {
+                  ...tab.tablesErrorBySchema,
+                  [schemaName]: null,
+                },
+              }
+            : tab
+        )));
+      } catch {
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === endpointId
+            ? {
+                ...tab,
+                tablesStatusBySchema: {
+                  ...tab.tablesStatusBySchema,
+                  [schemaName]: 'error',
+                },
+                tablesErrorBySchema: {
+                  ...tab.tablesErrorBySchema,
+                  [schemaName]: 'Failed to load tables for this schema.',
+                },
+              }
+            : tab
+        )));
+      }
+    })();
+  };
+
   return (
     <div style={styles.root}>
       <AppSidebar activePanel={openPanel} onToggle={handleToggle} />
@@ -184,6 +272,7 @@ function AppLayout() {
             onSelectTab={setActiveMappingTabId}
             onCloseTab={handleCloseMappingTab}
             onChangeWorkspaceMode={handleChangeWorkspaceMode}
+            onLoadTables={handleLoadTables}
           />
         </div>
       </div>

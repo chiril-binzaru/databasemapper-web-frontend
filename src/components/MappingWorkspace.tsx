@@ -18,6 +18,9 @@ interface MappingWorkspaceTab extends EndpointMappingTab {
   schemasStatus: 'loading' | 'ready' | 'error';
   schemas: string[];
   schemasError: string | null;
+  tablesBySchema: Record<string, string[]>;
+  tablesStatusBySchema: Record<string, 'idle' | 'loading' | 'ready' | 'error'>;
+  tablesErrorBySchema: Record<string, string | null>;
   workspaceMode: 'prompt' | 'empty-grid' | 'response-model-grid';
 }
 
@@ -26,6 +29,7 @@ interface MappingWorkspaceProps {
   activeTabId: number | null;
   onSelectTab: (endpointId: number) => void;
   onCloseTab: (endpointId: number) => void;
+  onLoadTables: (endpointId: number, schemaName: string) => void;
   onChangeWorkspaceMode: (
     endpointId: number,
     workspaceMode: MappingWorkspaceTab['workspaceMode'],
@@ -45,11 +49,13 @@ function SchemaCell({
   disabled,
   options,
   onChange,
+  onOpenDropdown,
 }: {
   value: string;
   disabled: boolean;
   options: Array<{ label: string; value: string }>;
   onChange: (value: string) => void;
+  onOpenDropdown?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -127,6 +133,7 @@ function SchemaCell({
             event.preventDefault();
           }}
           onClick={() => {
+            onOpenDropdown?.();
             setDropdownOpen(open => !open);
           }}
         >
@@ -371,22 +378,37 @@ function flattenResponseModel(value: unknown): MappingGridRow[] {
 }
 
 function MappingGrid({
+  endpointId,
   serviceRows,
   schemasStatus,
   schemas,
   schemasError,
+  tablesBySchema,
+  tablesStatusBySchema,
+  tablesErrorBySchema,
+  onLoadTables,
 }: {
+  endpointId: number;
   serviceRows: MappingGridRow[];
   schemasStatus: MappingWorkspaceTab['schemasStatus'];
   schemas: string[];
   schemasError: string | null;
+  tablesBySchema: MappingWorkspaceTab['tablesBySchema'];
+  tablesStatusBySchema: MappingWorkspaceTab['tablesStatusBySchema'];
+  tablesErrorBySchema: MappingWorkspaceTab['tablesErrorBySchema'];
+  onLoadTables: (endpointId: number, schemaName: string) => void;
 }) {
   const serviceRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const databaseRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const [selectedSchemas, setSelectedSchemas] = useState<string[]>([]);
+  const [selectedTables, setSelectedTables] = useState<string[]>([]);
 
   useEffect(() => {
     setSelectedSchemas(prev => Array.from({ length: databaseRowCount }, (_, index) => prev[index] ?? ''));
+  }, [databaseRowCount]);
+
+  useEffect(() => {
+    setSelectedTables(prev => Array.from({ length: databaseRowCount }, (_, index) => prev[index] ?? ''));
   }, [databaseRowCount]);
 
   const schemaOptions = schemas.map(schema => ({
@@ -426,29 +448,71 @@ function MappingGrid({
           <span style={styles.gridHeaderCell}>Column</span>
           <span style={styles.gridHeaderCell}>Type</span>
         </div>
-        {Array.from({ length: databaseRowCount }).map((_, index) => (
-          <div key={`database-${index}`} style={styles.databaseGridRow}>
-            <span style={styles.schemaGridCell}>
-              <SchemaCell
-                value={selectedSchemas[index] ?? ''}
-                options={schemaOptions}
-                disabled={schemasStatus !== 'ready' || schemas.length === 0}
-                onChange={value => {
-                  setSelectedSchemas(prev => {
-                    const next = [...prev];
-                    next[index] = value;
-                    return next;
-                  });
-                }}
-              />
-            </span>
-            <span style={styles.gridCell} />
-            <span style={styles.gridCell} />
-            <span style={styles.gridCell} />
-          </div>
-        ))}
+        {Array.from({ length: databaseRowCount }).map((_, index) => {
+          const selectedSchema = selectedSchemas[index] ?? '';
+          const tablesStatus = selectedSchema ? (tablesStatusBySchema[selectedSchema] ?? 'idle') : 'idle';
+          const tableOptions = (tablesBySchema[selectedSchema] ?? []).map(table => ({
+            label: table,
+            value: table,
+          }));
+
+          return (
+            <div key={`database-${index}`} style={styles.databaseGridRow}>
+              <span style={styles.schemaGridCell}>
+                <SchemaCell
+                  value={selectedSchemas[index] ?? ''}
+                  options={schemaOptions}
+                  disabled={schemasStatus !== 'ready' || schemas.length === 0}
+                  onChange={value => {
+                    setSelectedSchemas(prev => {
+                      const next = [...prev];
+                      const previousSchema = next[index] ?? '';
+                      next[index] = value;
+
+                      if (previousSchema !== value) {
+                        setSelectedTables(currentTables => {
+                          const nextTables = [...currentTables];
+                          nextTables[index] = '';
+                          return nextTables;
+                        });
+                      }
+
+                      return next;
+                    });
+                  }}
+                />
+              </span>
+              <span style={styles.schemaGridCell}>
+                <SchemaCell
+                  value={selectedTables[index] ?? ''}
+                  options={tableOptions}
+                  disabled={!selectedSchema || tablesStatus === 'loading'}
+                  onOpenDropdown={() => {
+                    if (selectedSchema) {
+                      onLoadTables(endpointId, selectedSchema);
+                    }
+                  }}
+                  onChange={value => {
+                    setSelectedTables(prev => {
+                      const next = [...prev];
+                      next[index] = value;
+                      return next;
+                    });
+                  }}
+                />
+              </span>
+              <span style={styles.gridCell} />
+              <span style={styles.gridCell} />
+            </div>
+          );
+        })}
         {schemasStatus === 'error' && schemasError && (
           <div style={styles.databaseGridNote}>{schemasError}</div>
+        )}
+        {!schemasError && Object.values(tablesErrorBySchema).find(Boolean) && (
+          <div style={styles.databaseGridNote}>
+            {Object.values(tablesErrorBySchema).find(Boolean)}
+          </div>
         )}
       </div>
     </div>
@@ -460,6 +524,7 @@ export default function MappingWorkspace({
   activeTabId,
   onSelectTab,
   onCloseTab,
+  onLoadTables,
   onChangeWorkspaceMode,
 }: MappingWorkspaceProps) {
   const safeTabs = tabs ?? [];
@@ -543,12 +608,17 @@ export default function MappingWorkspace({
             ) : (
               <MappingGrid
                 key={`${activeTab.endpointId}-${activeTab.workspaceMode}`}
+                endpointId={activeTab.endpointId}
                 serviceRows={activeTab.workspaceMode === 'response-model-grid'
                   ? flattenResponseModel(activeTab.responseModel)
                   : []}
                 schemasStatus={activeTab.schemasStatus}
                 schemas={activeTab.schemas}
                 schemasError={activeTab.schemasError}
+                tablesBySchema={activeTab.tablesBySchema}
+                tablesStatusBySchema={activeTab.tablesStatusBySchema}
+                tablesErrorBySchema={activeTab.tablesErrorBySchema}
+                onLoadTables={onLoadTables}
               />
             )
           ) : (
