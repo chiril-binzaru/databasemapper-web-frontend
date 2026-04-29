@@ -15,13 +15,13 @@ interface OpenMappingTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
   mapping: unknown | null;
   mappingError: string | null;
-  responseModelStatus: 'loading' | 'ready' | 'error';
+  responseModelStatus: 'idle' | 'loading' | 'ready' | 'error';
   responseModel: unknown | null;
   responseModelError: string | null;
-  databaseStatus: 'loading' | 'ready' | 'error';
+  databaseStatus: 'idle' | 'loading' | 'ready' | 'error';
   database: DatabaseResponse | null;
   databaseError: string | null;
-  schemasStatus: 'loading' | 'ready' | 'error';
+  schemasStatus: 'idle' | 'loading' | 'ready' | 'error';
   schemas: string[];
   schemasError: string | null;
   tablesBySchema: Record<string, string[]>;
@@ -65,13 +65,13 @@ function AppLayout() {
           mappingStatus: 'loading',
           mapping: null,
           mappingError: null,
-          responseModelStatus: 'loading',
+          responseModelStatus: 'idle',
           responseModel: null,
           responseModelError: null,
-          databaseStatus: 'loading',
+          databaseStatus: 'idle',
           database: null,
           databaseError: null,
-          schemasStatus: 'loading',
+          schemasStatus: 'idle',
           schemas: [],
           schemasError: null,
           tablesBySchema: {},
@@ -88,50 +88,31 @@ function AppLayout() {
     }
 
     void (async () => {
-      const [mappingResult, responseModelResult, databaseResult] = await Promise.allSettled([
-        getEndpointMapping(mappingTab.endpointId),
-        getEndpointResponseModel(mappingTab.endpointId),
-        getServiceDatabase(mappingTab.serviceId),
-      ]);
-      const resolvedDatabase = databaseResult.status === 'fulfilled' ? databaseResult.value : null;
+      try {
+        const mapping = await getEndpointMapping(mappingTab.endpointId);
 
-      const schemasResult = resolvedDatabase
-        ? await Promise.allSettled([getDatabaseSchemas(resolvedDatabase.databaseId)])
-        : null;
-
-      setMappingTabs(prev => prev.map(tab => (
-        tab.endpointId === mappingTab.endpointId
-          ? {
-              ...tab,
-              mappingStatus: mappingResult.status === 'fulfilled' ? 'ready' : 'error',
-              mapping: mappingResult.status === 'fulfilled' ? mappingResult.value : null,
-              mappingError: mappingResult.status === 'fulfilled'
-                ? null
-                : 'Failed to load mapping for this endpoint.',
-              responseModelStatus: responseModelResult.status === 'fulfilled' ? 'ready' : 'error',
-              responseModel: responseModelResult.status === 'fulfilled' ? responseModelResult.value : null,
-              responseModelError: responseModelResult.status === 'fulfilled'
-                ? null
-                : 'Failed to load response model for this endpoint.',
-              databaseStatus: databaseResult.status === 'fulfilled' ? 'ready' : 'error',
-              database: resolvedDatabase,
-              databaseError: databaseResult.status === 'fulfilled'
-                ? null
-                : 'Failed to load database details for this service.',
-              schemasStatus: schemasResult
-                ? schemasResult[0].status === 'fulfilled' ? 'ready' : 'error'
-                : 'ready',
-              schemas: schemasResult && schemasResult[0].status === 'fulfilled'
-                ? schemasResult[0].value
-                : [],
-              schemasError: schemasResult
-                ? schemasResult[0].status === 'fulfilled'
-                  ? null
-                  : 'Failed to load database schemas.'
-                : null,
-            }
-          : tab
-      )));
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === mappingTab.endpointId
+            ? {
+                ...tab,
+                mappingStatus: 'ready',
+                mapping,
+                mappingError: null,
+              }
+            : tab
+        )));
+      } catch {
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === mappingTab.endpointId
+            ? {
+                ...tab,
+                mappingStatus: 'error',
+                mapping: null,
+                mappingError: 'Failed to load mapping for this endpoint.',
+              }
+            : tab
+        )));
+      }
     })();
   };
 
@@ -161,11 +142,94 @@ function AppLayout() {
     endpointId: number,
     workspaceMode: OpenMappingTab['workspaceMode'],
   ) => {
-    setMappingTabs(prev => prev.map(tab => (
-      tab.endpointId === endpointId
-        ? { ...tab, workspaceMode }
-        : tab
-    )));
+    if (workspaceMode === 'prompt') {
+      setMappingTabs(prev => prev.map(tab => (
+        tab.endpointId === endpointId
+          ? { ...tab, workspaceMode }
+          : tab
+      )));
+      return;
+    }
+
+    const targetTab = mappingTabs.find(tab => tab.endpointId === endpointId) ?? null;
+
+    if (!targetTab) {
+      return;
+    }
+
+    setMappingTabs(prev => prev.map(tab => {
+      if (tab.endpointId !== endpointId) {
+        return tab;
+      }
+
+      return {
+        ...tab,
+        workspaceMode,
+        responseModelStatus: 'loading',
+        responseModel: null,
+        responseModelError: null,
+        databaseStatus: 'loading',
+        database: null,
+        databaseError: null,
+        schemasStatus: 'loading',
+        schemas: [],
+        schemasError: null,
+      };
+    }));
+
+    const serviceId = targetTab.serviceId;
+
+    void (async () => {
+      let responseModelStatus: OpenMappingTab['responseModelStatus'] = 'ready';
+      let responseModel: unknown | null = null;
+      let responseModelError: string | null = null;
+      let databaseStatus: OpenMappingTab['databaseStatus'] = 'ready';
+      let database: DatabaseResponse | null = null;
+      let databaseError: string | null = null;
+      let schemasStatus: OpenMappingTab['schemasStatus'] = 'ready';
+      let schemas: string[] = [];
+      let schemasError: string | null = null;
+
+      try {
+        responseModel = await getEndpointResponseModel(endpointId);
+      } catch {
+        responseModelStatus = 'error';
+        responseModelError = 'Failed to load response model for this endpoint.';
+      }
+
+      try {
+        database = await getServiceDatabase(serviceId);
+      } catch {
+        databaseStatus = 'error';
+        databaseError = 'Failed to load database details for this service.';
+      }
+
+      if (database) {
+        try {
+          schemas = await getDatabaseSchemas(database.databaseId);
+        } catch {
+          schemasStatus = 'error';
+          schemasError = 'Failed to load database schemas.';
+        }
+      }
+
+      setMappingTabs(prev => prev.map(tab => (
+        tab.endpointId === endpointId
+          ? {
+              ...tab,
+              responseModelStatus,
+              responseModel,
+              responseModelError,
+              databaseStatus,
+              database,
+              databaseError,
+              schemasStatus,
+              schemas,
+              schemasError,
+            }
+          : tab
+      )));
+    })();
   };
 
   const handleLoadTables = (endpointId: number, schemaName: string) => {

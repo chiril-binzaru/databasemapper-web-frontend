@@ -8,13 +8,13 @@ interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
   mapping: unknown | null;
   mappingError: string | null;
-  responseModelStatus: 'loading' | 'ready' | 'error';
+  responseModelStatus: 'idle' | 'loading' | 'ready' | 'error';
   responseModel: unknown | null;
   responseModelError: string | null;
-  databaseStatus: 'loading' | 'ready' | 'error';
+  databaseStatus: 'idle' | 'loading' | 'ready' | 'error';
   database: DatabaseResponse | null;
   databaseError: string | null;
-  schemasStatus: 'loading' | 'ready' | 'error';
+  schemasStatus: 'idle' | 'loading' | 'ready' | 'error';
   schemas: string[];
   schemasError: string | null;
   tablesBySchema: Record<string, string[]>;
@@ -670,6 +670,8 @@ export default function MappingWorkspace({
               />
             )
           ) : (
+            // TODO: Once the persisted mapping format is established, render it here.
+            // That path should load responseModel, service database details, then database schemas.
             <div style={styles.placeholderState}>Mapping data loaded. Rendering populated mappings comes next.</div>
           )}
         </div>
