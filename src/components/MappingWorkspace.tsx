@@ -59,6 +59,7 @@ function SchemaCell({
   const [editing, setEditing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
+  const [hoveredOptionValue, setHoveredOptionValue] = useState<string | null>(null);
   const blurTimeoutRef = useRef<number | null>(null);
   const editorInputRef = useRef<HTMLInputElement | null>(null);
   const visibleOptions = searchValue
@@ -79,6 +80,7 @@ function SchemaCell({
     setEditing(false);
     setDropdownOpen(false);
     setSearchValue('');
+    setHoveredOptionValue(null);
   };
 
   useEffect(() => {
@@ -169,9 +171,16 @@ function SchemaCell({
                 style={{
                   ...styles.schemaDropdownOption,
                   ...(option.value === value ? styles.schemaDropdownOptionSelected : null),
+                  ...(option.value === hoveredOptionValue ? styles.schemaDropdownOptionHovered : null),
                 }}
                 onMouseDown={event => {
                   event.preventDefault();
+                }}
+                onMouseEnter={() => {
+                  setHoveredOptionValue(option.value);
+                }}
+                onMouseLeave={() => {
+                  setHoveredOptionValue(currentValue => currentValue === option.value ? null : currentValue);
                 }}
                 onClick={() => {
                   onChange(option.value);
@@ -1063,6 +1072,10 @@ const styles: Record<string, CSSProperties> = {
   schemaDropdownOptionSelected: {
     background: 'rgba(64,150,255,0.18)',
     color: 'rgba(255,255,255,0.88)',
+  },
+  schemaDropdownOptionHovered: {
+    background: 'rgba(255,255,255,0.1)',
+    color: 'rgba(255,255,255,0.92)',
   },
   schemaCellButtonDisabled: {
     cursor: 'not-allowed',
