@@ -49,36 +49,3 @@ body {
   background: rgba(255, 255, 255, 0.22);
   cursor: pointer;
 }
-
-.schema-inline-select.ant-select {
-  width: 100%;
-  height: 100%;
-}
-
-.schema-inline-select.ant-select .ant-select-selector {
-  height: 100% !important;
-  padding: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  align-items: center;
-}
-
-.schema-inline-select.ant-select .ant-select-selection-wrap {
-  height: 100%;
-}
-
-.schema-inline-select.ant-select .ant-select-selection-search {
-  inset-inline-start: 0 !important;
-  inset-inline-end: 0 !important;
-}
-
-.schema-inline-select.ant-select .ant-select-selection-search-input,
-.schema-inline-select.ant-select .ant-select-selection-item {
-  height: 100% !important;
-  padding: 0 !important;
-  color: rgba(255, 255, 255, 0.74) !important;
-  font-size: 12px !important;
-  font-family: monospace !important;
-  line-height: 40px !important;
-  background: transparent !important;
-}

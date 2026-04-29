@@ -1,6 +1,5 @@
 import { CloseOutlined, DownOutlined } from '@ant-design/icons';
-import { Select } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { EndpointMappingTab } from '../services/endpointsApi';
 import type { DatabaseResponse } from '../services/databaseApi';
@@ -61,6 +60,16 @@ function SchemaCell({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const blurTimeoutRef = useRef<number | null>(null);
+  const editorInputRef = useRef<HTMLInputElement | null>(null);
+  const visibleOptions = searchValue
+    ? options.filter(option => option.label.toLowerCase().includes(searchValue.toLowerCase()))
+    : options;
+
+  const startEditing = (openDropdown = false) => {
+    setSearchValue(value);
+    setEditing(true);
+    setDropdownOpen(openDropdown);
+  };
 
   const stopEditing = () => {
     if (blurTimeoutRef.current !== null) {
@@ -86,33 +95,29 @@ function SchemaCell({
     }
   }, [editing, value]);
 
+  useLayoutEffect(() => {
+    if (editing && !disabled) {
+      const input = editorInputRef.current;
+
+      if (input) {
+        const caretPosition = input.value.length;
+        input.focus();
+        input.setSelectionRange(caretPosition, caretPosition);
+      }
+    }
+  }, [disabled, editing]);
+
   if (editing && !disabled) {
     return (
       <div style={styles.schemaEditorShell}>
-        <Select
-          autoFocus
-          open={dropdownOpen}
-          value={value || undefined}
-          searchValue={searchValue}
-          showSearch={{
-            filterOption: (input, option) =>
-              String(option?.label ?? '').toLowerCase().includes(input.toLowerCase()),
-          }}
-          placeholder=""
-          options={options}
-          variant="borderless"
-          suffixIcon={null}
-          onSearch={nextValue => {
-            setSearchValue(nextValue);
-          }}
-          onChange={nextValue => {
-            onChange(nextValue);
-            stopEditing();
-          }}
-          onBlur={() => {
-            blurTimeoutRef.current = window.setTimeout(() => {
-              stopEditing();
-            }, 0);
+        <input
+          ref={editorInputRef}
+          value={searchValue}
+          style={styles.schemaEditorInput}
+          spellCheck={false}
+          onChange={event => {
+            setSearchValue(event.target.value);
+            setDropdownOpen(true);
           }}
           onFocus={() => {
             if (blurTimeoutRef.current !== null) {
@@ -120,11 +125,26 @@ function SchemaCell({
               blurTimeoutRef.current = null;
             }
           }}
-          onOpenChange={open => {
-            setDropdownOpen(open);
+          onBlur={() => {
+            blurTimeoutRef.current = window.setTimeout(() => {
+              stopEditing();
+            }, 0);
           }}
-          className="schema-inline-select"
-          style={styles.schemaSelectEditing}
+          onKeyDown={event => {
+            if (event.key === 'Escape') {
+              stopEditing();
+            }
+
+            if (event.key === 'Enter') {
+              const matchingOption = visibleOptions[0];
+
+              if (matchingOption) {
+                onChange(matchingOption.value);
+              }
+
+              stopEditing();
+            }
+          }}
         />
         <button
           type="button"
@@ -135,10 +155,34 @@ function SchemaCell({
           onClick={() => {
             onOpenDropdown?.();
             setDropdownOpen(open => !open);
+            editorInputRef.current?.focus();
           }}
         >
           <DownOutlined />
         </button>
+        {dropdownOpen && visibleOptions.length > 0 && (
+          <div style={styles.schemaDropdown}>
+            {visibleOptions.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                style={{
+                  ...styles.schemaDropdownOption,
+                  ...(option.value === value ? styles.schemaDropdownOptionSelected : null),
+                }}
+                onMouseDown={event => {
+                  event.preventDefault();
+                }}
+                onClick={() => {
+                  onChange(option.value);
+                  stopEditing();
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -153,16 +197,13 @@ function SchemaCell({
       }}
       onClick={() => {
         if (!disabled) {
-          setEditing(true);
-          setDropdownOpen(false);
+          startEditing(false);
         }
       }}
       onKeyDown={event => {
         if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault();
-          setEditing(true);
-          setDropdownOpen(false);
-          setSearchValue(value);
+          startEditing(false);
         }
       }}
     >
@@ -186,9 +227,7 @@ function SchemaCell({
           onClick={event => {
             event.stopPropagation();
             if (!disabled) {
-              setEditing(true);
-              setDropdownOpen(true);
-              setSearchValue(value);
+              startEditing(true);
             }
           }}
         >
@@ -915,21 +954,28 @@ const styles: Record<string, CSSProperties> = {
   schemaEditorShell: {
     position: 'relative',
     width: '100%',
+    minWidth: 0,
     height: '100%',
     display: 'flex',
     alignItems: 'stretch',
     padding: '0 12px',
     background: 'rgba(255,255,255,0.01)',
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    lineHeight: 'normal',
   },
   schemaGridCell: {
     display: 'flex',
     alignItems: 'stretch',
+    minWidth: 0,
     padding: 0,
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
   },
   schemaCellButton: {
     width: '100%',
+    minWidth: 0,
     height: '100%',
     display: 'flex',
     alignItems: 'center',
@@ -941,6 +987,10 @@ const styles: Record<string, CSSProperties> = {
     cursor: 'text',
     textAlign: 'left',
     outline: 'none',
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    lineHeight: 'normal',
   },
   schemaArrowButton: {
     width: '100%',
@@ -967,24 +1017,71 @@ const styles: Record<string, CSSProperties> = {
     cursor: 'pointer',
     flexShrink: 0,
   },
+  schemaEditorInput: {
+    flex: '1 1 auto',
+    width: 0,
+    minWidth: 0,
+    height: '100%',
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    lineHeight: 'normal',
+  },
+  schemaDropdown: {
+    position: 'absolute',
+    zIndex: 20,
+    top: '100%',
+    left: 0,
+    right: 0,
+    maxHeight: 220,
+    overflowY: 'auto',
+    padding: 4,
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 6,
+    background: '#1f1f1f',
+    boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
+  },
+  schemaDropdownOption: {
+    width: '100%',
+    minHeight: 28,
+    display: 'flex',
+    alignItems: 'center',
+    border: 'none',
+    borderRadius: 4,
+    background: 'transparent',
+    padding: '0 8px',
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+  schemaDropdownOptionSelected: {
+    background: 'rgba(64,150,255,0.18)',
+    color: 'rgba(255,255,255,0.88)',
+  },
   schemaCellButtonDisabled: {
     cursor: 'not-allowed',
   },
   schemaCellLabel: {
+    flex: '1 1 auto',
     minWidth: 0,
-    lineHeight: '40px',
+    lineHeight: 'normal',
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
     fontSize: 12,
+    fontFamily: 'inherit',
   },
   schemaCellLabelFilled: {
     color: 'rgba(255,255,255,0.74)',
-    fontFamily: 'monospace',
   },
   schemaCellLabelPlaceholder: {
     color: 'rgba(255,255,255,0.32)',
-    lineHeight: '40px',
   },
   schemaCellArrow: {
     width: 28,
