@@ -1219,6 +1219,7 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.74)',
     fontSize: 12,
     fontFamily: 'monospace',
+    lineHeight: '18px',
   },
   gridCellTextMuted: {
     display: 'flex',
@@ -1229,6 +1230,7 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.45)',
     fontSize: 12,
     fontFamily: 'monospace',
+    lineHeight: '18px',
   },
   schemaEditorShell: {
     position: 'relative',
@@ -1242,7 +1244,7 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.74)',
     fontSize: 12,
     fontFamily: 'monospace',
-    lineHeight: 'normal',
+    lineHeight: '18px',
   },
   schemaGridCell: {
     display: 'flex',
@@ -1269,7 +1271,7 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.74)',
     fontSize: 12,
     fontFamily: 'monospace',
-    lineHeight: 'normal',
+    lineHeight: '18px',
   },
   schemaArrowButton: {
     width: '100%',
@@ -1308,7 +1310,7 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.74)',
     fontSize: 12,
     fontFamily: 'monospace',
-    lineHeight: 'normal',
+    lineHeight: '18px',
   },
   schemaDropdown: {
     position: 'absolute',
@@ -1338,6 +1340,7 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: 'monospace',
     textAlign: 'left',
     cursor: 'pointer',
+    lineHeight: '18px',
   },
   schemaDropdownOptionSelected: {
     background: 'rgba(64,150,255,0.18)',
@@ -1353,7 +1356,7 @@ const styles: Record<string, CSSProperties> = {
   schemaCellLabel: {
     flex: '1 1 auto',
     minWidth: 0,
-    lineHeight: 'normal',
+    lineHeight: '18px',
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
