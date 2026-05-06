@@ -1,13 +1,16 @@
 import { CloseOutlined, DownOutlined } from '@ant-design/icons';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { EndpointMappingTab } from '../services/endpointsApi';
+import type { EndpointMappingTab, MappingDto, MappingFieldEntry } from '../services/endpointsApi';
 import type { DatabaseResponse } from '../services/databaseApi';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
-  mapping: unknown | null;
+  mapping: MappingDto | null;
   mappingError: string | null;
+  isDirty: boolean;
+  saveStatus: 'idle' | 'saving' | 'error';
+  saveError: string | null;
   responseModelStatus: 'idle' | 'loading' | 'ready' | 'error';
   responseModel: unknown | null;
   responseModelError: string | null;
@@ -29,10 +32,12 @@ interface MappingWorkspaceProps {
   onSelectTab: (endpointId: number) => void;
   onCloseTab: (endpointId: number) => void;
   onLoadTables: (endpointId: number, schemaName: string) => void;
-  onChangeWorkspaceMode: (
+  onCreateMapping: (
     endpointId: number,
     workspaceMode: MappingWorkspaceTab['workspaceMode'],
   ) => void;
+  onChangeMapping: (endpointId: number, mapping: MappingDto) => void;
+  onSaveMapping: (endpointId: number) => void;
 }
 
 const EMPTY_GRID_ROWS = 12;
@@ -269,6 +274,10 @@ function TabCloseButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+function TabDirtyIndicator() {
+  return <span aria-label="Unsaved changes" style={styles.tabDirtyIndicator} />;
+}
+
 function MappingTab({
   tab,
   isActive,
@@ -297,7 +306,7 @@ function MappingTab({
         <span style={styles.tabMethod}>{tab.httpMethod}</span>
         <span style={styles.tabPath}>{tab.endpointPath}</span>
       </div>
-      <TabCloseButton onClick={onClose} />
+      {tab.isDirty ? <TabDirtyIndicator /> : <TabCloseButton onClick={onClose} />}
     </div>
   );
 }
@@ -425,8 +434,87 @@ function flattenResponseModel(value: unknown): MappingGridRow[] {
   return flattenSchema(rootSchemaName);
 }
 
+function flattenMappingEntries(entries: MappingFieldEntry[], prefix = ''): MappingFieldEntry[] {
+  return entries.flatMap(entry => {
+    const fieldPath = prefix ? `${prefix}.${entry.modelField}` : entry.modelField;
+    const currentEntry = { ...entry, modelField: fieldPath };
+
+    if (entry.fieldMappings && entry.fieldMappings.length > 0) {
+      return [currentEntry, ...flattenMappingEntries(entry.fieldMappings, fieldPath)];
+    }
+
+    return [currentEntry];
+  });
+}
+
+function parseColumnPath(columnPath: string | undefined): { schema: string; table: string } {
+  if (!columnPath) {
+    return { schema: '', table: '' };
+  }
+
+  const [schema = '', table = ''] = columnPath.split('.');
+  return { schema, table };
+}
+
+function updateMappingColumnPaths(
+  mapping: MappingDto,
+  serviceRows: MappingGridRow[],
+  selectedSchemas: string[],
+  selectedTables: string[],
+): MappingDto {
+  const columnPathByField = new Map<string, string | undefined>();
+
+  serviceRows.forEach((row, index) => {
+    const schema = selectedSchemas[index] ?? '';
+    const table = selectedTables[index] ?? '';
+    const columnPath = schema && table ? `${schema}.${table}` : schema || undefined;
+    columnPathByField.set(row.name, columnPath);
+  });
+
+  const updateEntries = (entries: MappingFieldEntry[], prefix = ''): MappingFieldEntry[] => entries.map(entry => {
+    const fieldPath = prefix ? `${prefix}.${entry.modelField}` : entry.modelField;
+    const nextEntry: MappingFieldEntry = { ...entry };
+
+    if (columnPathByField.has(fieldPath)) {
+      const columnPath = columnPathByField.get(fieldPath);
+
+      if (columnPath) {
+        nextEntry.columnPath = columnPath;
+      } else {
+        delete nextEntry.columnPath;
+      }
+    }
+
+    if (entry.fieldMappings) {
+      nextEntry.fieldMappings = updateEntries(entry.fieldMappings, fieldPath);
+    }
+
+    return nextEntry;
+  });
+
+  return {
+    ...mapping,
+    fieldMappings: updateEntries(mapping.fieldMappings),
+  };
+}
+
+function getRowsFromMapping(mapping: MappingDto | null): MappingGridRow[] {
+  if (!mapping) {
+    return [];
+  }
+
+  return flattenMappingEntries(mapping.fieldMappings)
+    .filter(entry => !entry.fieldMappings || entry.fieldMappings.length === 0)
+    .map(entry => ({
+      name: entry.modelField,
+      type: entry.type ?? '',
+      format: entry.format ?? '',
+    }));
+}
+
 function MappingGrid({
   endpointId,
+  mapping,
   serviceRows,
   schemasStatus,
   schemas,
@@ -435,8 +523,10 @@ function MappingGrid({
   tablesStatusBySchema,
   tablesErrorBySchema,
   onLoadTables,
+  onChangeMapping,
 }: {
   endpointId: number;
+  mapping: MappingDto | null;
   serviceRows: MappingGridRow[];
   schemasStatus: MappingWorkspaceTab['schemasStatus'];
   schemas: string[];
@@ -445,6 +535,7 @@ function MappingGrid({
   tablesStatusBySchema: MappingWorkspaceTab['tablesStatusBySchema'];
   tablesErrorBySchema: MappingWorkspaceTab['tablesErrorBySchema'];
   onLoadTables: (endpointId: number, schemaName: string) => void;
+  onChangeMapping: (endpointId: number, mapping: MappingDto) => void;
 }) {
   const serviceRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const databaseRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
@@ -452,17 +543,33 @@ function MappingGrid({
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
 
   useEffect(() => {
-    setSelectedSchemas(prev => Array.from({ length: databaseRowCount }, (_, index) => prev[index] ?? ''));
-  }, [databaseRowCount]);
+    const flattenedEntries = mapping ? flattenMappingEntries(mapping.fieldMappings) : [];
 
-  useEffect(() => {
-    setSelectedTables(prev => Array.from({ length: databaseRowCount }, (_, index) => prev[index] ?? ''));
-  }, [databaseRowCount]);
+    setSelectedSchemas(Array.from({ length: databaseRowCount }, (_, index) => {
+      const row = serviceRows[index];
+      const entry = row ? flattenedEntries.find(item => item.modelField === row.name) : null;
+      return parseColumnPath(entry?.columnPath).schema;
+    }));
+
+    setSelectedTables(Array.from({ length: databaseRowCount }, (_, index) => {
+      const row = serviceRows[index];
+      const entry = row ? flattenedEntries.find(item => item.modelField === row.name) : null;
+      return parseColumnPath(entry?.columnPath).table;
+    }));
+  }, [databaseRowCount, mapping, serviceRows]);
 
   const schemaOptions = schemas.map(schema => ({
     label: schema,
     value: schema,
   }));
+
+  const emitMappingChange = (nextSchemas: string[], nextTables: string[]) => {
+    if (!mapping) {
+      return;
+    }
+
+    onChangeMapping(endpointId, updateMappingColumnPaths(mapping, serviceRows, nextSchemas, nextTables));
+  };
 
   return (
     <div style={styles.gridShell}>
@@ -516,13 +623,15 @@ function MappingGrid({
                       const next = [...prev];
                       const previousSchema = next[index] ?? '';
                       next[index] = value;
-
                       if (previousSchema !== value) {
                         setSelectedTables(currentTables => {
                           const nextTables = [...currentTables];
                           nextTables[index] = '';
+                          emitMappingChange(next, nextTables);
                           return nextTables;
                         });
+                      } else {
+                        emitMappingChange(next, selectedTables);
                       }
 
                       return next;
@@ -544,6 +653,7 @@ function MappingGrid({
                     setSelectedTables(prev => {
                       const next = [...prev];
                       next[index] = value;
+                      emitMappingChange(selectedSchemas, next);
                       return next;
                     });
                   }}
@@ -573,13 +683,32 @@ export default function MappingWorkspace({
   onSelectTab,
   onCloseTab,
   onLoadTables,
-  onChangeWorkspaceMode,
+  onCreateMapping,
+  onChangeMapping,
+  onSaveMapping,
 }: MappingWorkspaceProps) {
   const safeTabs = tabs ?? [];
   const safeOnSelectTab = onSelectTab ?? (() => {});
   const safeOnCloseTab = onCloseTab ?? (() => {});
-  const safeOnChangeWorkspaceMode = onChangeWorkspaceMode ?? (() => {});
+  const safeOnCreateMapping = onCreateMapping ?? (() => {});
+  const safeOnChangeMapping = onChangeMapping ?? (() => {});
+  const safeOnSaveMapping = onSaveMapping ?? (() => {});
   const activeTab = safeTabs.find(tab => tab.endpointId === activeTabId) ?? null;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+
+        if (activeTab?.isDirty) {
+          safeOnSaveMapping(activeTab.endpointId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, safeOnSaveMapping]);
 
   if (safeTabs.length === 0) {
     return (
@@ -617,12 +746,38 @@ export default function MappingWorkspace({
               <span style={styles.canvasTitle}>{activeTab.httpMethod} {activeTab.endpointPath}</span>
               <span style={styles.canvasSubtitle}>{activeTab.serviceName}</span>
             </div>
+            <div style={styles.saveStatusGroup}>
+              {activeTab.saveStatus === 'saving' && (
+                <span style={styles.saveStatusText}>Saving...</span>
+              )}
+              {activeTab.saveStatus === 'error' && (
+                <span style={styles.saveStatusError}>{activeTab.saveError ?? 'Save failed.'}</span>
+              )}
+              {activeTab.isDirty && activeTab.saveStatus !== 'saving' && (
+                <span style={styles.saveStatusText}>Unsaved changes</span>
+              )}
+            </div>
           </div>
 
           {activeTab.mappingStatus === 'loading' ? (
             <div style={styles.placeholderState}>Loading mapping...</div>
           ) : activeTab.mappingStatus === 'error' ? (
             <div style={styles.placeholderStateError}>{activeTab.mappingError ?? 'Failed to load mapping.'}</div>
+          ) : activeTab.workspaceMode !== 'prompt' ? (
+            <MappingGrid
+              key={`${activeTab.endpointId}-${activeTab.workspaceMode}`}
+              endpointId={activeTab.endpointId}
+              mapping={activeTab.mapping}
+              serviceRows={getRowsFromMapping(activeTab.mapping)}
+              schemasStatus={activeTab.schemasStatus}
+              schemas={activeTab.schemas}
+              schemasError={activeTab.schemasError}
+              tablesBySchema={activeTab.tablesBySchema}
+              tablesStatusBySchema={activeTab.tablesStatusBySchema}
+              tablesErrorBySchema={activeTab.tablesErrorBySchema}
+              onLoadTables={onLoadTables}
+              onChangeMapping={safeOnChangeMapping}
+            />
           ) : isMappingEmpty(activeTab.mapping) ? (
             activeTab.workspaceMode === 'prompt' ? (
               <div style={styles.emptyMappingPrompt}>
@@ -630,14 +785,14 @@ export default function MappingWorkspace({
                 <button
                   type="button"
                   style={styles.inlineAction}
-                  onClick={() => safeOnChangeWorkspaceMode(activeTab.endpointId, 'empty-grid')}
+                  onClick={() => safeOnCreateMapping(activeTab.endpointId, 'empty-grid')}
                 >
                   Create empty mapping
                 </button>
                 <button
                   type="button"
                   style={styles.inlineAction}
-                  onClick={() => safeOnChangeWorkspaceMode(activeTab.endpointId, 'response-model-grid')}
+                  onClick={() => safeOnCreateMapping(activeTab.endpointId, 'response-model-grid')}
                 >
                   Create mapping with populated response model
                 </button>
@@ -649,30 +804,29 @@ export default function MappingWorkspace({
                     {activeTab.responseModelError ?? 'Failed to load response model.'}
                   </span>
                 )}
+                {activeTab.mappingError && (
+                  <span style={styles.inlineHintError}>{activeTab.mappingError}</span>
+                )}
                 {activeTab.responseModelStatus === 'ready' && flattenResponseModel(activeTab.responseModel).length === 0 && (
                   <span style={styles.inlineHint}>Response model is empty, so the Service side will stay blank.</span>
                 )}
               </div>
-            ) : (
-              <MappingGrid
-                key={`${activeTab.endpointId}-${activeTab.workspaceMode}`}
-                endpointId={activeTab.endpointId}
-                serviceRows={activeTab.workspaceMode === 'response-model-grid'
-                  ? flattenResponseModel(activeTab.responseModel)
-                  : []}
-                schemasStatus={activeTab.schemasStatus}
-                schemas={activeTab.schemas}
-                schemasError={activeTab.schemasError}
-                tablesBySchema={activeTab.tablesBySchema}
-                tablesStatusBySchema={activeTab.tablesStatusBySchema}
-                tablesErrorBySchema={activeTab.tablesErrorBySchema}
-                onLoadTables={onLoadTables}
-              />
-            )
+            ) : null
           ) : (
-            // TODO: Once the persisted mapping format is established, render it here.
-            // That path should load responseModel, service database details, then database schemas.
-            <div style={styles.placeholderState}>Mapping data loaded. Rendering populated mappings comes next.</div>
+            <MappingGrid
+              key={`${activeTab.endpointId}-persisted`}
+              endpointId={activeTab.endpointId}
+              mapping={activeTab.mapping}
+              serviceRows={getRowsFromMapping(activeTab.mapping)}
+              schemasStatus={activeTab.schemasStatus}
+              schemas={activeTab.schemas}
+              schemasError={activeTab.schemasError}
+              tablesBySchema={activeTab.tablesBySchema}
+              tablesStatusBySchema={activeTab.tablesStatusBySchema}
+              tablesErrorBySchema={activeTab.tablesErrorBySchema}
+              onLoadTables={onLoadTables}
+              onChangeMapping={safeOnChangeMapping}
+            />
           )}
         </div>
       )}
@@ -786,6 +940,13 @@ const styles: Record<string, CSSProperties> = {
     background: 'rgba(255,255,255,0.1)',
     color: 'rgba(255,255,255,0.82)',
   },
+  tabDirtyIndicator: {
+    width: 9,
+    height: 9,
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.62)',
+    flexShrink: 0,
+  },
   canvas: {
     flex: 1,
     minHeight: 0,
@@ -804,6 +965,20 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 4,
+  },
+  saveStatusGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    minWidth: 140,
+  },
+  saveStatusText: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 12,
+  },
+  saveStatusError: {
+    color: '#ffccc7',
+    fontSize: 12,
   },
   canvasTitle: {
     color: 'rgba(255,255,255,0.84)',

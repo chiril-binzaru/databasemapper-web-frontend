@@ -36,6 +36,28 @@ export interface SyncEndpointsResponse {
   endpoints?: EndpointSyncItem[] | null;
 }
 
+export interface MappingJoinCondition {
+  parentColumn?: string;
+  childColumn?: string;
+}
+
+export interface MappingFieldEntry {
+  modelField: string;
+  kind: 'VALUE' | 'LIST_OF_VALUES' | 'MODEL' | 'LIST_OF_MODELS';
+  type?: string;
+  format?: string;
+  columnPath?: string;
+  isPrimaryKey?: boolean;
+  joinCondition?: MappingJoinCondition;
+  modelName?: string;
+  fieldMappings?: MappingFieldEntry[];
+}
+
+export interface MappingDto {
+  modelName: string;
+  fieldMappings: MappingFieldEntry[];
+}
+
 interface CreateEndpointRequest {
   httpMethod: string;
   endpointPath: string;
@@ -64,9 +86,19 @@ export async function syncServiceEndpoints(serviceId: number): Promise<SyncEndpo
   return response.data;
 }
 
-export async function getEndpointMapping(endpointId: number): Promise<unknown | null> {
-  const response = await apiClient.get<unknown | null>(`/api/v1/endpoints/${endpointId}/mapping`);
+export async function getEndpointMapping(endpointId: number): Promise<MappingDto | null> {
+  const response = await apiClient.get<MappingDto | null>(`/api/v1/endpoints/${endpointId}/mapping`);
   return response.data ?? null;
+}
+
+export async function createEndpointMapping(endpointId: number, data: MappingDto): Promise<MappingDto> {
+  const response = await apiClient.post<MappingDto>(`/api/v1/endpoints/${endpointId}/mapping`, data);
+  return response.data;
+}
+
+export async function replaceEndpointMapping(endpointId: number, data: MappingDto): Promise<MappingDto> {
+  const response = await apiClient.put<MappingDto>(`/api/v1/endpoints/${endpointId}/mapping`, data);
+  return response.data;
 }
 
 export async function getEndpointResponseModel(endpointId: number): Promise<unknown | null> {
