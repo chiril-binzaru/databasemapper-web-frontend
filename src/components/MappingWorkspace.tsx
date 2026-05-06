@@ -619,23 +619,18 @@ function MappingGrid({
                   options={schemaOptions}
                   disabled={schemasStatus !== 'ready' || schemas.length === 0}
                   onChange={value => {
-                    setSelectedSchemas(prev => {
-                      const next = [...prev];
-                      const previousSchema = next[index] ?? '';
-                      next[index] = value;
-                      if (previousSchema !== value) {
-                        setSelectedTables(currentTables => {
-                          const nextTables = [...currentTables];
-                          nextTables[index] = '';
-                          emitMappingChange(next, nextTables);
-                          return nextTables;
-                        });
-                      } else {
-                        emitMappingChange(next, selectedTables);
-                      }
+                    const nextSchemas = [...selectedSchemas];
+                    const previousSchema = nextSchemas[index] ?? '';
+                    nextSchemas[index] = value;
 
-                      return next;
-                    });
+                    const nextTables = [...selectedTables];
+                    if (previousSchema !== value) {
+                      nextTables[index] = '';
+                    }
+
+                    setSelectedSchemas(nextSchemas);
+                    setSelectedTables(nextTables);
+                    emitMappingChange(nextSchemas, nextTables);
                   }}
                 />
               </span>
@@ -650,12 +645,11 @@ function MappingGrid({
                     }
                   }}
                   onChange={value => {
-                    setSelectedTables(prev => {
-                      const next = [...prev];
-                      next[index] = value;
-                      emitMappingChange(selectedSchemas, next);
-                      return next;
-                    });
+                    const nextTables = [...selectedTables];
+                    nextTables[index] = value;
+
+                    setSelectedTables(nextTables);
+                    emitMappingChange(selectedSchemas, nextTables);
                   }}
                 />
               </span>
