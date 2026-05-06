@@ -520,22 +520,18 @@ function AppLayout() {
       return;
     }
 
-    let databaseId: number | null = null;
-    let shouldFetch = false;
+    const targetTab = mappingTabs.find(tab => tab.endpointId === endpointId) ?? null;
+    const databaseId = targetTab?.database?.databaseId ?? null;
+    const currentStatus = targetTab?.tablesStatusBySchema[schemaName] ?? 'idle';
+
+    if (!databaseId || currentStatus !== 'idle') {
+      return;
+    }
 
     setMappingTabs(prev => prev.map(tab => {
       if (tab.endpointId !== endpointId) {
         return tab;
       }
-
-      databaseId = tab.database?.databaseId ?? null;
-      const currentStatus = tab.tablesStatusBySchema[schemaName] ?? 'idle';
-
-      if (!databaseId || currentStatus !== 'idle') {
-        return tab;
-      }
-
-      shouldFetch = true;
 
       return {
         ...tab,
@@ -549,10 +545,6 @@ function AppLayout() {
         },
       };
     }));
-
-    if (!shouldFetch || !databaseId) {
-      return;
-    }
 
     void (async () => {
       try {

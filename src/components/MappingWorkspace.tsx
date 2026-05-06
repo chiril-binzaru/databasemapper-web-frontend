@@ -72,6 +72,10 @@ function SchemaCell({
     : options;
 
   const startEditing = (openDropdown = false) => {
+    if (openDropdown) {
+      onOpenDropdown?.();
+    }
+
     setSearchValue(value);
     setEditing(true);
     setDropdownOpen(openDropdown);
@@ -160,8 +164,13 @@ function SchemaCell({
             event.preventDefault();
           }}
           onClick={() => {
-            onOpenDropdown?.();
-            setDropdownOpen(open => !open);
+            const nextDropdownOpen = !dropdownOpen;
+
+            if (nextDropdownOpen) {
+              onOpenDropdown?.();
+            }
+
+            setDropdownOpen(nextDropdownOpen);
             editorInputRef.current?.focus();
           }}
         >
@@ -631,6 +640,10 @@ function MappingGrid({
                     setSelectedSchemas(nextSchemas);
                     setSelectedTables(nextTables);
                     emitMappingChange(nextSchemas, nextTables);
+
+                    if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
+                      onLoadTables(endpointId, value);
+                    }
                   }}
                 />
               </span>
@@ -638,9 +651,9 @@ function MappingGrid({
                 <SchemaCell
                   value={selectedTables[index] ?? ''}
                   options={tableOptions}
-                  disabled={!selectedSchema || tablesStatus === 'loading'}
+                  disabled={!selectedSchema}
                   onOpenDropdown={() => {
-                    if (selectedSchema) {
+                    if (selectedSchema && tablesStatus === 'idle') {
                       onLoadTables(endpointId, selectedSchema);
                     }
                   }}
