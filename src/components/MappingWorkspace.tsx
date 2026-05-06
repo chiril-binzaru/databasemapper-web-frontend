@@ -2,7 +2,7 @@ import { CloseOutlined, DownOutlined } from '@ant-design/icons';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { EndpointMappingTab, MappingDto, MappingFieldEntry } from '../services/endpointsApi';
-import type { DatabaseResponse } from '../services/databaseApi';
+import type { DatabaseResponse, DbColumnResponse } from '../services/databaseApi';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -23,6 +23,9 @@ interface MappingWorkspaceTab extends EndpointMappingTab {
   tablesBySchema: Record<string, string[]>;
   tablesStatusBySchema: Record<string, 'idle' | 'loading' | 'ready' | 'error'>;
   tablesErrorBySchema: Record<string, string | null>;
+  columnsByTable: Record<string, DbColumnResponse[]>;
+  columnsStatusByTable: Record<string, 'idle' | 'loading' | 'ready' | 'error'>;
+  columnsErrorByTable: Record<string, string | null>;
   workspaceMode: 'prompt' | 'empty-grid' | 'response-model-grid';
 }
 
@@ -32,6 +35,7 @@ interface MappingWorkspaceProps {
   onSelectTab: (endpointId: number) => void;
   onCloseTab: (endpointId: number) => void;
   onLoadTables: (endpointId: number, schemaName: string) => void;
+  onLoadColumns: (endpointId: number, schemaName: string, tableName: string) => void;
   onCreateMapping: (
     endpointId: number,
     workspaceMode: MappingWorkspaceTab['workspaceMode'],
@@ -46,6 +50,10 @@ interface MappingGridRow {
   name: string;
   type: string;
   format: string;
+}
+
+function createTableKey(schemaName: string, tableName: string): string {
+  return JSON.stringify([schemaName, tableName]);
 }
 
 function SchemaCell({
@@ -456,13 +464,13 @@ function flattenMappingEntries(entries: MappingFieldEntry[], prefix = ''): Mappi
   });
 }
 
-function parseColumnPath(columnPath: string | undefined): { schema: string; table: string } {
+function parseColumnPath(columnPath: string | undefined): { schema: string; table: string; column: string } {
   if (!columnPath) {
-    return { schema: '', table: '' };
+    return { schema: '', table: '', column: '' };
   }
 
-  const [schema = '', table = ''] = columnPath.split('.');
-  return { schema, table };
+  const [schema = '', table = '', column = ''] = columnPath.split('.');
+  return { schema, table, column };
 }
 
 function updateMappingColumnPaths(
@@ -470,13 +478,19 @@ function updateMappingColumnPaths(
   serviceRows: MappingGridRow[],
   selectedSchemas: string[],
   selectedTables: string[],
+  selectedColumns: string[],
 ): MappingDto {
   const columnPathByField = new Map<string, string | undefined>();
 
   serviceRows.forEach((row, index) => {
     const schema = selectedSchemas[index] ?? '';
     const table = selectedTables[index] ?? '';
-    const columnPath = schema && table ? `${schema}.${table}` : schema || undefined;
+    const column = selectedColumns[index] ?? '';
+    const columnPath = schema && table && column
+      ? `${schema}.${table}.${column}`
+      : schema && table
+        ? `${schema}.${table}`
+        : schema || undefined;
     columnPathByField.set(row.name, columnPath);
   });
 
@@ -531,7 +545,11 @@ function MappingGrid({
   tablesBySchema,
   tablesStatusBySchema,
   tablesErrorBySchema,
+  columnsByTable,
+  columnsStatusByTable,
+  columnsErrorByTable,
   onLoadTables,
+  onLoadColumns,
   onChangeMapping,
 }: {
   endpointId: number;
@@ -543,13 +561,18 @@ function MappingGrid({
   tablesBySchema: MappingWorkspaceTab['tablesBySchema'];
   tablesStatusBySchema: MappingWorkspaceTab['tablesStatusBySchema'];
   tablesErrorBySchema: MappingWorkspaceTab['tablesErrorBySchema'];
+  columnsByTable: MappingWorkspaceTab['columnsByTable'];
+  columnsStatusByTable: MappingWorkspaceTab['columnsStatusByTable'];
+  columnsErrorByTable: MappingWorkspaceTab['columnsErrorByTable'];
   onLoadTables: (endpointId: number, schemaName: string) => void;
+  onLoadColumns: (endpointId: number, schemaName: string, tableName: string) => void;
   onChangeMapping: (endpointId: number, mapping: MappingDto) => void;
 }) {
   const serviceRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const databaseRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const [selectedSchemas, setSelectedSchemas] = useState<string[]>([]);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
 
   useEffect(() => {
     const flattenedEntries = mapping ? flattenMappingEntries(mapping.fieldMappings) : [];
@@ -565,6 +588,12 @@ function MappingGrid({
       const entry = row ? flattenedEntries.find(item => item.modelField === row.name) : null;
       return parseColumnPath(entry?.columnPath).table;
     }));
+
+    setSelectedColumns(Array.from({ length: databaseRowCount }, (_, index) => {
+      const row = serviceRows[index];
+      const entry = row ? flattenedEntries.find(item => item.modelField === row.name) : null;
+      return parseColumnPath(entry?.columnPath).column;
+    }));
   }, [databaseRowCount, mapping, serviceRows]);
 
   const schemaOptions = schemas.map(schema => ({
@@ -572,12 +601,12 @@ function MappingGrid({
     value: schema,
   }));
 
-  const emitMappingChange = (nextSchemas: string[], nextTables: string[]) => {
+  const emitMappingChange = (nextSchemas: string[], nextTables: string[], nextColumns: string[]) => {
     if (!mapping) {
       return;
     }
 
-    onChangeMapping(endpointId, updateMappingColumnPaths(mapping, serviceRows, nextSchemas, nextTables));
+    onChangeMapping(endpointId, updateMappingColumnPaths(mapping, serviceRows, nextSchemas, nextTables, nextColumns));
   };
 
   return (
@@ -614,11 +643,21 @@ function MappingGrid({
         </div>
         {Array.from({ length: databaseRowCount }).map((_, index) => {
           const selectedSchema = selectedSchemas[index] ?? '';
+          const selectedTable = selectedTables[index] ?? '';
+          const selectedColumn = selectedColumns[index] ?? '';
+          const tableKey = selectedSchema && selectedTable ? createTableKey(selectedSchema, selectedTable) : '';
           const tablesStatus = selectedSchema ? (tablesStatusBySchema[selectedSchema] ?? 'idle') : 'idle';
+          const columnsStatus = tableKey ? (columnsStatusByTable[tableKey] ?? 'idle') : 'idle';
+          const columns = tableKey ? (columnsByTable[tableKey] ?? []) : [];
           const tableOptions = (tablesBySchema[selectedSchema] ?? []).map(table => ({
             label: table,
             value: table,
           }));
+          const columnOptions = columns.map(column => ({
+            label: column.name,
+            value: column.name,
+          }));
+          const selectedColumnInfo = columns.find(column => column.name === selectedColumn);
 
           return (
             <div key={`database-${index}`} style={styles.databaseGridRow}>
@@ -633,13 +672,16 @@ function MappingGrid({
                     nextSchemas[index] = value;
 
                     const nextTables = [...selectedTables];
+                    const nextColumns = [...selectedColumns];
                     if (previousSchema !== value) {
                       nextTables[index] = '';
+                      nextColumns[index] = '';
                     }
 
                     setSelectedSchemas(nextSchemas);
                     setSelectedTables(nextTables);
-                    emitMappingChange(nextSchemas, nextTables);
+                    setSelectedColumns(nextColumns);
+                    emitMappingChange(nextSchemas, nextTables, nextColumns);
 
                     if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
                       onLoadTables(endpointId, value);
@@ -659,15 +701,44 @@ function MappingGrid({
                   }}
                   onChange={value => {
                     const nextTables = [...selectedTables];
+                    const previousTable = nextTables[index] ?? '';
                     nextTables[index] = value;
 
+                    const nextColumns = [...selectedColumns];
+                    if (previousTable !== value) {
+                      nextColumns[index] = '';
+                    }
+
                     setSelectedTables(nextTables);
-                    emitMappingChange(selectedSchemas, nextTables);
+                    setSelectedColumns(nextColumns);
+                    emitMappingChange(selectedSchemas, nextTables, nextColumns);
+
+                    if (selectedSchema && value && (columnsStatusByTable[createTableKey(selectedSchema, value)] ?? 'idle') === 'idle') {
+                      onLoadColumns(endpointId, selectedSchema, value);
+                    }
                   }}
                 />
               </span>
-              <span style={styles.gridCell} />
-              <span style={styles.gridCell} />
+              <span style={styles.schemaGridCell}>
+                <SchemaCell
+                  value={selectedColumn}
+                  options={columnOptions}
+                  disabled={!selectedSchema || !selectedTable}
+                  onOpenDropdown={() => {
+                    if (selectedSchema && selectedTable && columnsStatus === 'idle') {
+                      onLoadColumns(endpointId, selectedSchema, selectedTable);
+                    }
+                  }}
+                  onChange={value => {
+                    const nextColumns = [...selectedColumns];
+                    nextColumns[index] = value;
+
+                    setSelectedColumns(nextColumns);
+                    emitMappingChange(selectedSchemas, selectedTables, nextColumns);
+                  }}
+                />
+              </span>
+              <span style={styles.gridCellTextMuted}>{selectedColumnInfo?.dataType ?? ''}</span>
             </div>
           );
         })}
@@ -677,6 +748,11 @@ function MappingGrid({
         {!schemasError && Object.values(tablesErrorBySchema).find(Boolean) && (
           <div style={styles.databaseGridNote}>
             {Object.values(tablesErrorBySchema).find(Boolean)}
+          </div>
+        )}
+        {!schemasError && !Object.values(tablesErrorBySchema).find(Boolean) && Object.values(columnsErrorByTable).find(Boolean) && (
+          <div style={styles.databaseGridNote}>
+            {Object.values(columnsErrorByTable).find(Boolean)}
           </div>
         )}
       </div>
@@ -690,6 +766,7 @@ export default function MappingWorkspace({
   onSelectTab,
   onCloseTab,
   onLoadTables,
+  onLoadColumns,
   onCreateMapping,
   onChangeMapping,
   onSaveMapping,
@@ -697,6 +774,7 @@ export default function MappingWorkspace({
   const safeTabs = tabs ?? [];
   const safeOnSelectTab = onSelectTab ?? (() => {});
   const safeOnCloseTab = onCloseTab ?? (() => {});
+  const safeOnLoadColumns = onLoadColumns ?? (() => {});
   const safeOnCreateMapping = onCreateMapping ?? (() => {});
   const safeOnChangeMapping = onChangeMapping ?? (() => {});
   const safeOnSaveMapping = onSaveMapping ?? (() => {});
@@ -782,7 +860,11 @@ export default function MappingWorkspace({
               tablesBySchema={activeTab.tablesBySchema}
               tablesStatusBySchema={activeTab.tablesStatusBySchema}
               tablesErrorBySchema={activeTab.tablesErrorBySchema}
+              columnsByTable={activeTab.columnsByTable}
+              columnsStatusByTable={activeTab.columnsStatusByTable}
+              columnsErrorByTable={activeTab.columnsErrorByTable}
               onLoadTables={onLoadTables}
+              onLoadColumns={safeOnLoadColumns}
               onChangeMapping={safeOnChangeMapping}
             />
           ) : isMappingEmpty(activeTab.mapping) ? (
@@ -831,7 +913,11 @@ export default function MappingWorkspace({
               tablesBySchema={activeTab.tablesBySchema}
               tablesStatusBySchema={activeTab.tablesStatusBySchema}
               tablesErrorBySchema={activeTab.tablesErrorBySchema}
+              columnsByTable={activeTab.columnsByTable}
+              columnsStatusByTable={activeTab.columnsStatusByTable}
+              columnsErrorByTable={activeTab.columnsErrorByTable}
               onLoadTables={onLoadTables}
+              onLoadColumns={safeOnLoadColumns}
               onChangeMapping={safeOnChangeMapping}
             />
           )}

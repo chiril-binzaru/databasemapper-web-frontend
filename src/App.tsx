@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { App as AntApp, ConfigProvider, theme } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppSidebar from './components/AppSidebar';
@@ -13,8 +13,8 @@ import {
   replaceEndpointMapping,
 } from './services/endpointsApi';
 import type { EndpointMappingTab, MappingDto, MappingFieldEntry } from './services/endpointsApi';
-import { getDatabaseSchemas, getDatabaseTables, getServiceDatabase } from './services/databaseApi';
-import type { DatabaseResponse } from './services/databaseApi';
+import { getDatabaseColumns, getDatabaseSchemas, getDatabaseTables, getServiceDatabase } from './services/databaseApi';
+import type { DatabaseResponse, DbColumnResponse } from './services/databaseApi';
 
 interface OpenMappingTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -35,7 +35,14 @@ interface OpenMappingTab extends EndpointMappingTab {
   tablesBySchema: Record<string, string[]>;
   tablesStatusBySchema: Record<string, 'idle' | 'loading' | 'ready' | 'error'>;
   tablesErrorBySchema: Record<string, string | null>;
+  columnsByTable: Record<string, DbColumnResponse[]>;
+  columnsStatusByTable: Record<string, 'idle' | 'loading' | 'ready' | 'error'>;
+  columnsErrorByTable: Record<string, string | null>;
   workspaceMode: 'prompt' | 'empty-grid' | 'response-model-grid';
+}
+
+function createTableKey(schemaName: string, tableName: string): string {
+  return JSON.stringify([schemaName, tableName]);
 }
 
 function deriveModelNameFromEndpoint(endpointPath: string): string {
@@ -171,6 +178,7 @@ function createMappingWithResponseModel(tab: EndpointMappingTab, responseModel: 
 
 function AppLayout() {
   const { message } = AntApp.useApp();
+  const loadingColumnKeysRef = useRef<Set<string>>(new Set());
   const [openPanel, setOpenPanel] = useState<PanelType>(null);
   const [pinned, setPinned] = useState(false);
   const [panelWidth, setPanelWidth] = useState(576);
@@ -220,6 +228,9 @@ function AppLayout() {
           tablesBySchema: {},
           tablesStatusBySchema: {},
           tablesErrorBySchema: {},
+          columnsByTable: {},
+          columnsStatusByTable: {},
+          columnsErrorByTable: {},
           workspaceMode: 'prompt',
         },
       ];
@@ -360,6 +371,9 @@ function AppLayout() {
         schemasStatus: 'loading',
         schemas: [],
         schemasError: null,
+        columnsByTable: {},
+        columnsStatusByTable: {},
+        columnsErrorByTable: {},
       };
     }));
 
@@ -589,6 +603,86 @@ function AppLayout() {
     })();
   };
 
+  const handleLoadColumns = (endpointId: number, schemaName: string, tableName: string) => {
+    if (!schemaName || !tableName) {
+      return;
+    }
+
+    const tableKey = createTableKey(schemaName, tableName);
+    const loadingKey = `${endpointId}:${tableKey}`;
+    const targetTab = mappingTabs.find(tab => tab.endpointId === endpointId) ?? null;
+    const databaseId = targetTab?.database?.databaseId ?? null;
+    const currentStatus = targetTab?.columnsStatusByTable[tableKey] ?? 'idle';
+
+    if (!databaseId || currentStatus !== 'idle' || loadingColumnKeysRef.current.has(loadingKey)) {
+      return;
+    }
+
+    loadingColumnKeysRef.current.add(loadingKey);
+
+    setMappingTabs(prev => prev.map(tab => {
+      if (tab.endpointId !== endpointId) {
+        return tab;
+      }
+
+      return {
+        ...tab,
+        columnsStatusByTable: {
+          ...tab.columnsStatusByTable,
+          [tableKey]: 'loading',
+        },
+        columnsErrorByTable: {
+          ...tab.columnsErrorByTable,
+          [tableKey]: null,
+        },
+      };
+    }));
+
+    void (async () => {
+      try {
+        const columns = await getDatabaseColumns(databaseId, schemaName, tableName);
+
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === endpointId
+            ? {
+                ...tab,
+                columnsByTable: {
+                  ...tab.columnsByTable,
+                  [tableKey]: columns,
+                },
+                columnsStatusByTable: {
+                  ...tab.columnsStatusByTable,
+                  [tableKey]: 'ready',
+                },
+                columnsErrorByTable: {
+                  ...tab.columnsErrorByTable,
+                  [tableKey]: null,
+                },
+              }
+            : tab
+        )));
+      } catch {
+        setMappingTabs(prev => prev.map(tab => (
+          tab.endpointId === endpointId
+            ? {
+                ...tab,
+                columnsStatusByTable: {
+                  ...tab.columnsStatusByTable,
+                  [tableKey]: 'error',
+                },
+                columnsErrorByTable: {
+                  ...tab.columnsErrorByTable,
+                  [tableKey]: 'Failed to load columns for this table.',
+                },
+              }
+            : tab
+        )));
+      } finally {
+        loadingColumnKeysRef.current.delete(loadingKey);
+      }
+    })();
+  };
+
   return (
     <div style={styles.root}>
       <AppSidebar activePanel={openPanel} onToggle={handleToggle} />
@@ -614,6 +708,7 @@ function AppLayout() {
             onChangeMapping={handleChangeMapping}
             onSaveMapping={handleSaveMapping}
             onLoadTables={handleLoadTables}
+            onLoadColumns={handleLoadColumns}
           />
         </div>
       </div>

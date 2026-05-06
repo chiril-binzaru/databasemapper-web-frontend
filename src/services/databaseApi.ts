@@ -8,6 +8,14 @@ export interface DatabaseResponse {
   databaseName: string;
 }
 
+export interface DbColumnResponse {
+  name: string;
+  dataType?: string;
+  nullable?: boolean;
+  ordinalPosition?: number;
+  columnDefault?: string;
+}
+
 export async function getServiceDatabase(serviceId: number): Promise<DatabaseResponse | null> {
   try {
     const response = await apiClient.get<DatabaseResponse>(`/api/v1/services/${serviceId}/database`);
@@ -29,6 +37,17 @@ export async function getDatabaseSchemas(databaseId: number): Promise<string[]> 
 export async function getDatabaseTables(databaseId: number, schemaName: string): Promise<string[]> {
   const response = await apiClient.get<string[]>(
     `/api/v1/databases/${databaseId}/schemas/${encodeURIComponent(schemaName)}/tables`,
+  );
+  return response.data ?? [];
+}
+
+export async function getDatabaseColumns(
+  databaseId: number,
+  schemaName: string,
+  tableName: string,
+): Promise<DbColumnResponse[]> {
+  const response = await apiClient.get<DbColumnResponse[]>(
+    `/api/v1/databases/${databaseId}/schemas/${encodeURIComponent(schemaName)}/tables/${encodeURIComponent(tableName)}/columns`,
   );
   return response.data ?? [];
 }
