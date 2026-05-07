@@ -36,26 +36,44 @@ export interface SyncEndpointsResponse {
   endpoints?: EndpointSyncItem[] | null;
 }
 
-export interface MappingJoinCondition {
-  parentColumn?: string;
-  childColumn?: string;
+export interface FieldServiceInfo {
+  modelField: string;
+  type?: string;
+  format?: string;
+  modelName?: string;
+}
+
+export interface FieldDatabaseInfo {
+  columnPath?: string;
+  columnType?: string;
+  isPrimaryKey?: boolean;
+}
+
+export interface JoinConditionPairDto {
+  left: string;
+  operator: 'EQ' | 'NEQ' | 'GT' | 'LT' | 'GTE' | 'LTE' | 'IN' | 'NOT_IN';
+  right?: string;
+  rightLiteral?: string;
+  rightValues?: string[];
+}
+
+export interface JoinEntryDto {
+  left?: string;
+  right?: string;
+  additionalJoinConditions?: JoinConditionPairDto[];
 }
 
 export interface MappingFieldEntry {
-  modelField: string;
   kind: 'VALUE' | 'LIST_OF_VALUES' | 'MODEL' | 'LIST_OF_MODELS';
-  type?: string;
-  format?: string;
-  columnPath?: string;
-  isPrimaryKey?: boolean;
-  joinCondition?: MappingJoinCondition;
-  modelName?: string;
+  serviceInfo: FieldServiceInfo;
+  databaseInfo?: FieldDatabaseInfo;
   fieldMappings?: MappingFieldEntry[];
 }
 
 export interface MappingDto {
   modelName: string;
   fieldMappings: MappingFieldEntry[];
+  joins?: JoinEntryDto[];
 }
 
 interface CreateEndpointRequest {
