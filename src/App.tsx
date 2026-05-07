@@ -113,11 +113,13 @@ function createFieldMappingsFromResponseModel(responseModel: unknown, rootModelN
 
       if (directRefName) {
         return {
-          modelField,
           kind: 'MODEL',
-          type: directRefName,
-          format: '',
-          modelName: directRefName,
+          serviceInfo: {
+            modelField,
+            type: directRefName,
+            format: '',
+            modelName: directRefName,
+          },
           fieldMappings: createEntries(directRefName, nextVisited),
         };
       }
@@ -131,28 +133,34 @@ function createFieldMappingsFromResponseModel(responseModel: unknown, rootModelN
 
         if (itemRefName) {
           return {
-            modelField,
             kind: 'LIST_OF_MODELS',
-            type: 'array',
-            format: '',
-            modelName: itemRefName,
+            serviceInfo: {
+              modelField,
+              type: 'array',
+              format: '',
+              modelName: itemRefName,
+            },
             fieldMappings: createEntries(itemRefName, nextVisited),
           };
         }
 
         return {
-          modelField,
           kind: 'LIST_OF_VALUES',
-          type: 'array',
-          format: items && typeof items.format === 'string' ? items.format : '',
+          serviceInfo: {
+            modelField,
+            type: 'array',
+            format: items && typeof items.format === 'string' ? items.format : '',
+          },
         };
       }
 
       return {
-        modelField,
         kind: 'VALUE',
-        type: typeof normalizedFieldSchema.type === 'string' ? normalizedFieldSchema.type : '',
-        format: typeof normalizedFieldSchema.format === 'string' ? normalizedFieldSchema.format : '',
+        serviceInfo: {
+          modelField,
+          type: typeof normalizedFieldSchema.type === 'string' ? normalizedFieldSchema.type : '',
+          format: typeof normalizedFieldSchema.format === 'string' ? normalizedFieldSchema.format : '',
+        },
       };
     });
   };
@@ -164,6 +172,7 @@ function createEmptyMapping(tab: EndpointMappingTab): MappingDto {
   return {
     modelName: deriveModelNameFromEndpoint(tab.endpointPath),
     fieldMappings: [],
+    joins: [],
   };
 }
 
@@ -173,6 +182,14 @@ function createMappingWithResponseModel(tab: EndpointMappingTab, responseModel: 
   return {
     modelName,
     fieldMappings: createFieldMappingsFromResponseModel(responseModel, modelName),
+    joins: [],
+  };
+}
+
+function prepareMappingForSave(mapping: MappingDto): MappingDto {
+  return {
+    ...mapping,
+    joins: [],
   };
 }
 
@@ -406,7 +423,7 @@ function AppLayout() {
         : createEmptyMapping(targetTab);
 
       try {
-        mapping = await createEndpointMapping(endpointId, mappingPayload);
+        mapping = await createEndpointMapping(endpointId, prepareMappingForSave(mappingPayload));
       } catch {
         setMappingTabs(prev => prev.map(tab => (
           tab.endpointId === endpointId
@@ -486,7 +503,7 @@ function AppLayout() {
       return;
     }
 
-    const mappingToSave = targetTab.mapping;
+    const mappingToSave = prepareMappingForSave(targetTab.mapping);
 
     setMappingTabs(prev => prev.map(tab => (
       tab.endpointId === endpointId

@@ -52,8 +52,28 @@ interface MappingGridRow {
   format: string;
 }
 
+interface SelectedJoinTable {
+  key: string;
+  schemaName: string;
+  tableName: string;
+}
+
 function createTableKey(schemaName: string, tableName: string): string {
   return JSON.stringify([schemaName, tableName]);
+}
+
+function parseTableKey(tableKey: string): SelectedJoinTable | null {
+  try {
+    const [schemaName, tableName] = JSON.parse(tableKey) as unknown[];
+
+    if (typeof schemaName === 'string' && typeof tableName === 'string' && schemaName && tableName) {
+      return { key: tableKey, schemaName, tableName };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function SchemaCell({
@@ -78,13 +98,14 @@ function SchemaCell({
   const visibleOptions = searchValue
     ? options.filter(option => option.label.toLowerCase().includes(searchValue.toLowerCase()))
     : options;
+  const displayValue = options.find(option => option.value === value)?.label ?? value;
 
   const startEditing = (openDropdown = false) => {
     if (openDropdown) {
       onOpenDropdown?.();
     }
 
-    setSearchValue(value);
+    setSearchValue(displayValue);
     setEditing(true);
     setDropdownOpen(openDropdown);
   };
@@ -110,9 +131,9 @@ function SchemaCell({
 
   useEffect(() => {
     if (editing) {
-      setSearchValue(value);
+      setSearchValue(displayValue);
     }
-  }, [editing, value]);
+  }, [displayValue, editing]);
 
   useLayoutEffect(() => {
     if (editing && !disabled) {
@@ -244,7 +265,7 @@ function SchemaCell({
           ...(value ? styles.schemaCellLabelFilled : styles.schemaCellLabelPlaceholder),
         }}
       >
-        {value}
+        {displayValue}
       </span>
       <span style={styles.schemaCellArrow}>
         <button
@@ -293,6 +314,144 @@ function TabCloseButton({ onClick }: { onClick: () => void }) {
 
 function TabDirtyIndicator() {
   return <span aria-label="Unsaved changes" style={styles.tabDirtyIndicator} />;
+}
+
+function SelectableTableCell({
+  value,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  value: string;
+  selected: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      style={{
+        ...styles.joinSelectableCell,
+        ...(selected ? styles.joinSelectableCellSelected : null),
+        ...(disabled ? styles.joinSelectableCellDisabled : null),
+      }}
+      onClick={() => {
+        if (!disabled) {
+          onToggle();
+        }
+      }}
+    >
+      <span style={styles.schemaCellLabel}>{value}</span>
+    </button>
+  );
+}
+
+function JoinTablesModal({
+  open,
+  tables,
+  columnsByTable,
+  onClose,
+}: {
+  open: boolean;
+  tables: SelectedJoinTable[];
+  columnsByTable: MappingWorkspaceTab['columnsByTable'];
+  onClose: () => void;
+}) {
+  const [leftTableKey, setLeftTableKey] = useState('');
+  const [rightTableKey, setRightTableKey] = useState('');
+  const [leftColumn, setLeftColumn] = useState('');
+  const [rightColumn, setRightColumn] = useState('');
+  const tablesSignature = tables.map(table => table.key).join('|');
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setLeftTableKey(tables[0]?.key ?? '');
+    setRightTableKey(tables[1]?.key ?? tables[0]?.key ?? '');
+    setLeftColumn('');
+    setRightColumn('');
+  }, [open, tablesSignature]);
+
+  if (!open) {
+    return null;
+  }
+
+  const leftColumns = leftTableKey ? (columnsByTable[leftTableKey] ?? []) : [];
+  const rightColumns = rightTableKey ? (columnsByTable[rightTableKey] ?? []) : [];
+
+  return (
+    <div style={styles.modalOverlay}>
+      <div style={styles.joinModal}>
+        <div style={styles.joinModalHeader}>
+          <div style={styles.joinModalTitleGroup}>
+            <span style={styles.joinModalTitle}>Define join</span>
+            <span style={styles.joinModalSubtitle}>{tables.length} distinct table{tables.length === 1 ? '' : 's'} selected</span>
+          </div>
+          <button type="button" style={styles.joinModalCloseButton} onClick={onClose}>
+            <CloseOutlined />
+          </button>
+        </div>
+
+        <div style={styles.joinSelectedTables}>
+          {tables.map(table => (
+            <span key={table.key} style={styles.joinTablePill}>
+              {table.schemaName}.{table.tableName}
+            </span>
+          ))}
+        </div>
+
+        <div style={styles.joinEditorGrid}>
+          <span style={styles.joinEditorLabel}>Left table</span>
+          <SchemaCell
+            value={leftTableKey}
+            options={tables.map(table => ({ label: `${table.schemaName}.${table.tableName}`, value: table.key }))}
+            disabled={tables.length === 0}
+            onChange={value => {
+              setLeftTableKey(value);
+              setLeftColumn('');
+            }}
+          />
+
+          <span style={styles.joinEditorLabel}>Left column</span>
+          <SchemaCell
+            value={leftColumn}
+            options={leftColumns.map(column => ({ label: column.name, value: column.name }))}
+            disabled={!leftTableKey}
+            onChange={setLeftColumn}
+          />
+
+          <span style={styles.joinEditorLabel}>Right table</span>
+          <SchemaCell
+            value={rightTableKey}
+            options={tables.map(table => ({ label: `${table.schemaName}.${table.tableName}`, value: table.key }))}
+            disabled={tables.length === 0}
+            onChange={value => {
+              setRightTableKey(value);
+              setRightColumn('');
+            }}
+          />
+
+          <span style={styles.joinEditorLabel}>Right column</span>
+          <SchemaCell
+            value={rightColumn}
+            options={rightColumns.map(column => ({ label: column.name, value: column.name }))}
+            disabled={!rightTableKey}
+            onChange={setRightColumn}
+          />
+        </div>
+
+        <div style={styles.joinModalFooter}>
+          <span style={styles.joinModalNote}>Saving join conditions will be wired after the mapping JSON shape is finalized.</span>
+          <button type="button" style={styles.joinModalActionButton} onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MappingTab({
@@ -453,8 +612,14 @@ function flattenResponseModel(value: unknown): MappingGridRow[] {
 
 function flattenMappingEntries(entries: MappingFieldEntry[], prefix = ''): MappingFieldEntry[] {
   return entries.flatMap(entry => {
-    const fieldPath = prefix ? `${prefix}.${entry.modelField}` : entry.modelField;
-    const currentEntry = { ...entry, modelField: fieldPath };
+    const fieldPath = prefix ? `${prefix}.${entry.serviceInfo.modelField}` : entry.serviceInfo.modelField;
+    const currentEntry = {
+      ...entry,
+      serviceInfo: {
+        ...entry.serviceInfo,
+        modelField: fieldPath,
+      },
+    };
 
     if (entry.fieldMappings && entry.fieldMappings.length > 0) {
       return [currentEntry, ...flattenMappingEntries(entry.fieldMappings, fieldPath)];
@@ -479,32 +644,48 @@ function updateMappingColumnPaths(
   selectedSchemas: string[],
   selectedTables: string[],
   selectedColumns: string[],
+  selectedColumnTypes: string[],
 ): MappingDto {
   const columnPathByField = new Map<string, string | undefined>();
+  const columnTypeByField = new Map<string, string | undefined>();
 
   serviceRows.forEach((row, index) => {
     const schema = selectedSchemas[index] ?? '';
     const table = selectedTables[index] ?? '';
     const column = selectedColumns[index] ?? '';
+    const columnType = selectedColumnTypes[index] ?? '';
     const columnPath = schema && table && column
       ? `${schema}.${table}.${column}`
       : schema && table
         ? `${schema}.${table}`
         : schema || undefined;
     columnPathByField.set(row.name, columnPath);
+    columnTypeByField.set(row.name, columnType || undefined);
   });
 
   const updateEntries = (entries: MappingFieldEntry[], prefix = ''): MappingFieldEntry[] => entries.map(entry => {
-    const fieldPath = prefix ? `${prefix}.${entry.modelField}` : entry.modelField;
+    const fieldPath = prefix ? `${prefix}.${entry.serviceInfo.modelField}` : entry.serviceInfo.modelField;
     const nextEntry: MappingFieldEntry = { ...entry };
 
     if (columnPathByField.has(fieldPath)) {
       const columnPath = columnPathByField.get(fieldPath);
 
       if (columnPath) {
-        nextEntry.columnPath = columnPath;
+        const columnType = columnTypeByField.get(fieldPath);
+        nextEntry.databaseInfo = {
+          ...nextEntry.databaseInfo,
+          columnPath,
+        };
+        if (columnType) {
+          nextEntry.databaseInfo.columnType = columnType;
+        } else {
+          delete nextEntry.databaseInfo.columnType;
+        }
       } else {
-        delete nextEntry.columnPath;
+        const databaseInfo = { ...(nextEntry.databaseInfo ?? {}) };
+        delete databaseInfo.columnPath;
+        delete databaseInfo.columnType;
+        nextEntry.databaseInfo = Object.keys(databaseInfo).length > 0 ? databaseInfo : undefined;
       }
     }
 
@@ -529,9 +710,9 @@ function getRowsFromMapping(mapping: MappingDto | null): MappingGridRow[] {
   return flattenMappingEntries(mapping.fieldMappings)
     .filter(entry => !entry.fieldMappings || entry.fieldMappings.length === 0)
     .map(entry => ({
-      name: entry.modelField,
-      type: entry.type ?? '',
-      format: entry.format ?? '',
+      name: entry.serviceInfo.modelField,
+      type: entry.serviceInfo.type ?? '',
+      format: entry.serviceInfo.format ?? '',
     }));
 }
 
@@ -573,26 +754,36 @@ function MappingGrid({
   const [selectedSchemas, setSelectedSchemas] = useState<string[]>([]);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [selectedColumnTypes, setSelectedColumnTypes] = useState<string[]>([]);
+  const [joinSelectionMode, setJoinSelectionMode] = useState(false);
+  const [selectedJoinRowIndexes, setSelectedJoinRowIndexes] = useState<Set<number>>(() => new Set());
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
 
   useEffect(() => {
     const flattenedEntries = mapping ? flattenMappingEntries(mapping.fieldMappings) : [];
 
     setSelectedSchemas(Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.modelField === row.name) : null;
-      return parseColumnPath(entry?.columnPath).schema;
+      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      return parseColumnPath(entry?.databaseInfo?.columnPath).schema;
     }));
 
     setSelectedTables(Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.modelField === row.name) : null;
-      return parseColumnPath(entry?.columnPath).table;
+      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      return parseColumnPath(entry?.databaseInfo?.columnPath).table;
     }));
 
     setSelectedColumns(Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.modelField === row.name) : null;
-      return parseColumnPath(entry?.columnPath).column;
+      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      return parseColumnPath(entry?.databaseInfo?.columnPath).column;
+    }));
+
+    setSelectedColumnTypes(Array.from({ length: databaseRowCount }, (_, index) => {
+      const row = serviceRows[index];
+      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      return entry?.databaseInfo?.columnType ?? '';
     }));
   }, [databaseRowCount, mapping, serviceRows]);
 
@@ -601,15 +792,68 @@ function MappingGrid({
     value: schema,
   }));
 
-  const emitMappingChange = (nextSchemas: string[], nextTables: string[], nextColumns: string[]) => {
+  const emitMappingChange = (
+    nextSchemas: string[],
+    nextTables: string[],
+    nextColumns: string[],
+    nextColumnTypes: string[],
+  ) => {
     if (!mapping) {
       return;
     }
 
-    onChangeMapping(endpointId, updateMappingColumnPaths(mapping, serviceRows, nextSchemas, nextTables, nextColumns));
+    onChangeMapping(
+      endpointId,
+      updateMappingColumnPaths(mapping, serviceRows, nextSchemas, nextTables, nextColumns, nextColumnTypes),
+    );
   };
 
+  const selectedJoinTables = Array.from(selectedJoinRowIndexes)
+    .map(index => {
+      const schemaName = selectedSchemas[index] ?? '';
+      const tableName = selectedTables[index] ?? '';
+      return schemaName && tableName ? createTableKey(schemaName, tableName) : '';
+    })
+    .filter(Boolean)
+    .filter((tableKey, index, tableKeys) => tableKeys.indexOf(tableKey) === index)
+    .map(parseTableKey)
+    .filter((table): table is SelectedJoinTable => table !== null);
+
+  const toggleJoinRowSelection = (rowIndex: number) => {
+    setSelectedJoinRowIndexes(prev => {
+      const next = new Set(prev);
+
+      if (next.has(rowIndex)) {
+        next.delete(rowIndex);
+      } else {
+        next.add(rowIndex);
+      }
+
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!joinSelectionMode) {
+      setSelectedJoinRowIndexes(new Set());
+      setJoinModalOpen(false);
+    }
+  }, [joinSelectionMode]);
+
+  useEffect(() => {
+    if (!joinModalOpen) {
+      return;
+    }
+
+    selectedJoinTables.forEach(table => {
+      if ((columnsStatusByTable[table.key] ?? 'idle') === 'idle') {
+        onLoadColumns(endpointId, table.schemaName, table.tableName);
+      }
+    });
+  }, [columnsStatusByTable, endpointId, joinModalOpen, onLoadColumns, selectedJoinTables]);
+
   return (
+    <>
     <div style={styles.gridShell}>
       <div style={styles.gridPane}>
         <div style={styles.gridSectionHeader}>Service</div>
@@ -634,7 +878,37 @@ function MappingGrid({
       <div style={styles.gridDivider} />
 
       <div style={styles.gridPane}>
-        <div style={styles.gridSectionHeader}>Database</div>
+        <div style={styles.gridSectionHeader}>
+          <span>Database</span>
+          <div style={styles.gridHeaderActions}>
+            {joinSelectionMode && (
+              <span style={styles.joinSelectionCount}>{selectedJoinTables.length} table{selectedJoinTables.length === 1 ? '' : 's'}</span>
+            )}
+            {joinSelectionMode && (
+              <button
+                type="button"
+                style={{
+                  ...styles.gridHeaderActionButton,
+                  ...(selectedJoinTables.length < 2 ? styles.gridHeaderActionButtonDisabled : null),
+                }}
+                disabled={selectedJoinTables.length < 2}
+                onClick={() => setJoinModalOpen(true)}
+              >
+                Define join
+              </button>
+            )}
+            <button
+              type="button"
+              style={{
+                ...styles.gridHeaderActionButton,
+                ...(joinSelectionMode ? styles.gridHeaderActionButtonActive : null),
+              }}
+              onClick={() => setJoinSelectionMode(mode => !mode)}
+            >
+              Join mode
+            </button>
+          </div>
+        </div>
         <div style={styles.databaseGridHeaderRow}>
           <span style={styles.gridHeaderCell}>Schema</span>
           <span style={styles.gridHeaderCell}>Table</span>
@@ -645,6 +919,7 @@ function MappingGrid({
           const selectedSchema = selectedSchemas[index] ?? '';
           const selectedTable = selectedTables[index] ?? '';
           const selectedColumn = selectedColumns[index] ?? '';
+          const selectedColumnType = selectedColumnTypes[index] ?? '';
           const tableKey = selectedSchema && selectedTable ? createTableKey(selectedSchema, selectedTable) : '';
           const tablesStatus = selectedSchema ? (tablesStatusBySchema[selectedSchema] ?? 'idle') : 'idle';
           const columnsStatus = tableKey ? (columnsStatusByTable[tableKey] ?? 'idle') : 'idle';
@@ -673,15 +948,27 @@ function MappingGrid({
 
                     const nextTables = [...selectedTables];
                     const nextColumns = [...selectedColumns];
+                    const nextColumnTypes = [...selectedColumnTypes];
                     if (previousSchema !== value) {
                       nextTables[index] = '';
                       nextColumns[index] = '';
+                      nextColumnTypes[index] = '';
                     }
 
                     setSelectedSchemas(nextSchemas);
                     setSelectedTables(nextTables);
                     setSelectedColumns(nextColumns);
-                    emitMappingChange(nextSchemas, nextTables, nextColumns);
+                    setSelectedColumnTypes(nextColumnTypes);
+                    setSelectedJoinRowIndexes(prev => {
+                      if (!prev.has(index)) {
+                        return prev;
+                      }
+
+                      const next = new Set(prev);
+                      next.delete(index);
+                      return next;
+                    });
+                    emitMappingChange(nextSchemas, nextTables, nextColumns, nextColumnTypes);
 
                     if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
                       onLoadTables(endpointId, value);
@@ -690,34 +977,55 @@ function MappingGrid({
                 />
               </span>
               <span style={styles.schemaGridCell}>
-                <SchemaCell
-                  value={selectedTables[index] ?? ''}
-                  options={tableOptions}
-                  disabled={!selectedSchema}
-                  onOpenDropdown={() => {
-                    if (selectedSchema && tablesStatus === 'idle') {
-                      onLoadTables(endpointId, selectedSchema);
-                    }
-                  }}
-                  onChange={value => {
-                    const nextTables = [...selectedTables];
-                    const previousTable = nextTables[index] ?? '';
-                    nextTables[index] = value;
+                {joinSelectionMode ? (
+                  <SelectableTableCell
+                    value={selectedTable}
+                    selected={selectedJoinRowIndexes.has(index)}
+                    disabled={!selectedSchema || !selectedTable}
+                    onToggle={() => toggleJoinRowSelection(index)}
+                  />
+                ) : (
+                  <SchemaCell
+                    value={selectedTables[index] ?? ''}
+                    options={tableOptions}
+                    disabled={!selectedSchema}
+                    onOpenDropdown={() => {
+                      if (selectedSchema && tablesStatus === 'idle') {
+                        onLoadTables(endpointId, selectedSchema);
+                      }
+                    }}
+                    onChange={value => {
+                      const nextTables = [...selectedTables];
+                      const previousTable = nextTables[index] ?? '';
+                      nextTables[index] = value;
 
-                    const nextColumns = [...selectedColumns];
-                    if (previousTable !== value) {
-                      nextColumns[index] = '';
-                    }
+                      const nextColumns = [...selectedColumns];
+                      const nextColumnTypes = [...selectedColumnTypes];
+                      if (previousTable !== value) {
+                        nextColumns[index] = '';
+                        nextColumnTypes[index] = '';
+                      }
 
-                    setSelectedTables(nextTables);
-                    setSelectedColumns(nextColumns);
-                    emitMappingChange(selectedSchemas, nextTables, nextColumns);
+                      setSelectedTables(nextTables);
+                      setSelectedColumns(nextColumns);
+                      setSelectedColumnTypes(nextColumnTypes);
+                      setSelectedJoinRowIndexes(prev => {
+                        if (!prev.has(index) || previousTable === value) {
+                          return prev;
+                        }
 
-                    if (selectedSchema && value && (columnsStatusByTable[createTableKey(selectedSchema, value)] ?? 'idle') === 'idle') {
-                      onLoadColumns(endpointId, selectedSchema, value);
-                    }
-                  }}
-                />
+                        const next = new Set(prev);
+                        next.delete(index);
+                        return next;
+                      });
+                      emitMappingChange(selectedSchemas, nextTables, nextColumns, nextColumnTypes);
+
+                      if (selectedSchema && value && (columnsStatusByTable[createTableKey(selectedSchema, value)] ?? 'idle') === 'idle') {
+                        onLoadColumns(endpointId, selectedSchema, value);
+                      }
+                    }}
+                  />
+                )}
               </span>
               <span style={styles.schemaGridCell}>
                 <SchemaCell
@@ -732,13 +1040,17 @@ function MappingGrid({
                   onChange={value => {
                     const nextColumns = [...selectedColumns];
                     nextColumns[index] = value;
+                    const selectedColumnInfo = columns.find(column => column.name === value);
+                    const nextColumnTypes = [...selectedColumnTypes];
+                    nextColumnTypes[index] = selectedColumnInfo?.dataType ?? '';
 
                     setSelectedColumns(nextColumns);
-                    emitMappingChange(selectedSchemas, selectedTables, nextColumns);
+                    setSelectedColumnTypes(nextColumnTypes);
+                    emitMappingChange(selectedSchemas, selectedTables, nextColumns, nextColumnTypes);
                   }}
                 />
               </span>
-              <span style={styles.gridCellTextMuted}>{selectedColumnInfo?.dataType ?? ''}</span>
+              <span style={styles.gridCellTextMuted}>{selectedColumnInfo?.dataType ?? selectedColumnType}</span>
             </div>
           );
         })}
@@ -757,6 +1069,13 @@ function MappingGrid({
         )}
       </div>
     </div>
+    <JoinTablesModal
+      open={joinModalOpen}
+      tables={selectedJoinTables}
+      columnsByTable={columnsByTable}
+      onClose={() => setJoinModalOpen(false)}
+    />
+    </>
   );
 }
 
@@ -1157,6 +1476,8 @@ const styles: Record<string, CSSProperties> = {
     height: 42,
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
     padding: '0 14px',
     background: 'linear-gradient(180deg, rgba(64,150,255,0.14) 0%, rgba(64,150,255,0.04) 100%)',
     borderBottom: '1px solid rgba(255,255,255,0.08)',
@@ -1165,6 +1486,39 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
     letterSpacing: '0.04em',
     textTransform: 'uppercase',
+  },
+  gridHeaderActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+  joinSelectionCount: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 11,
+    fontWeight: 500,
+    whiteSpace: 'nowrap',
+  },
+  gridHeaderActionButton: {
+    minHeight: 24,
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 4,
+    background: 'rgba(255,255,255,0.04)',
+    color: 'rgba(255,255,255,0.72)',
+    padding: '0 8px',
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  gridHeaderActionButtonActive: {
+    borderColor: 'rgba(73,204,144,0.55)',
+    background: 'rgba(73,204,144,0.14)',
+    color: '#b7eb8f',
+  },
+  gridHeaderActionButtonDisabled: {
+    opacity: 0.45,
+    cursor: 'not-allowed',
   },
   gridHeaderRow: {
     display: 'grid',
@@ -1253,6 +1607,32 @@ const styles: Record<string, CSSProperties> = {
     padding: 0,
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
+  },
+  joinSelectableCell: {
+    width: '100%',
+    minWidth: 0,
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    color: 'rgba(255,255,255,0.74)',
+    padding: '0 12px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    lineHeight: '18px',
+  },
+  joinSelectableCellSelected: {
+    background: 'rgba(73,204,144,0.18)',
+    boxShadow: 'inset 0 0 0 1px rgba(73,204,144,0.55)',
+    color: 'rgba(255,255,255,0.92)',
+  },
+  joinSelectableCellDisabled: {
+    color: 'rgba(255,255,255,0.24)',
+    cursor: 'not-allowed',
   },
   schemaCellButton: {
     width: '100%',
@@ -1385,5 +1765,115 @@ const styles: Record<string, CSSProperties> = {
     color: '#ffccc7',
     fontSize: 12,
     background: 'rgba(255,120,117,0.04)',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 1000,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    background: 'rgba(0,0,0,0.58)',
+  },
+  joinModal: {
+    width: 'min(760px, 100%)',
+    maxHeight: 'calc(100vh - 48px)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+    overflow: 'auto',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 8,
+    background: '#1b1b1b',
+    boxShadow: '0 22px 60px rgba(0,0,0,0.45)',
+    padding: 18,
+  },
+  joinModalHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  joinModalTitleGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  },
+  joinModalTitle: {
+    color: 'rgba(255,255,255,0.86)',
+    fontSize: 16,
+    fontWeight: 700,
+  },
+  joinModalSubtitle: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 12,
+  },
+  joinModalCloseButton: {
+    width: 28,
+    height: 28,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    borderRadius: 4,
+    background: 'transparent',
+    color: 'rgba(255,255,255,0.55)',
+    cursor: 'pointer',
+  },
+  joinSelectedTables: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  joinTablePill: {
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 4,
+    background: 'rgba(255,255,255,0.04)',
+    color: 'rgba(255,255,255,0.74)',
+    padding: '5px 8px',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    lineHeight: '18px',
+  },
+  joinEditorGrid: {
+    display: 'grid',
+    gridTemplateColumns: '120px minmax(0, 1fr)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  joinEditorLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    minHeight: 40,
+    borderRight: '1px solid rgba(255,255,255,0.08)',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.03)',
+    color: 'rgba(255,255,255,0.46)',
+    padding: '0 12px',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+  },
+  joinModalFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  joinModalNote: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 12,
+  },
+  joinModalActionButton: {
+    minHeight: 30,
+    border: '1px solid rgba(255,255,255,0.14)',
+    borderRadius: 4,
+    background: 'rgba(255,255,255,0.06)',
+    color: 'rgba(255,255,255,0.78)',
+    padding: '0 12px',
+    fontSize: 12,
+    cursor: 'pointer',
   },
 };
