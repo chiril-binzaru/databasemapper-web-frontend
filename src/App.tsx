@@ -187,8 +187,24 @@ function createMappingWithResponseModel(tab: EndpointMappingTab, responseModel: 
 }
 
 function prepareMappingForSave(mapping: MappingDto): MappingDto {
+  const normalizeEntries = (entries: MappingFieldEntry[]): MappingFieldEntry[] => entries.map(entry => {
+    const databaseInfo = entry.databaseInfo ? { ...entry.databaseInfo } : undefined;
+
+    if (databaseInfo) {
+      delete (databaseInfo as { isPrimaryKey?: boolean }).isPrimaryKey;
+      databaseInfo.primaryKey = databaseInfo.primaryKey === true;
+    }
+
+    return {
+      ...entry,
+      databaseInfo,
+      fieldMappings: entry.fieldMappings ? normalizeEntries(entry.fieldMappings) : undefined,
+    };
+  });
+
   return {
     ...mapping,
+    fieldMappings: normalizeEntries(mapping.fieldMappings),
     joins: mapping.joins ?? [],
   };
 }

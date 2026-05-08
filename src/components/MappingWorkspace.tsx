@@ -1,6 +1,6 @@
-import { CloseOutlined, DownOutlined } from '@ant-design/icons';
+import { CloseOutlined, DownOutlined, KeyOutlined } from '@ant-design/icons';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { EndpointMappingTab, JoinEntryDto, MappingDto, MappingFieldEntry } from '../services/endpointsApi';
 import type { DatabaseResponse, DbColumnResponse } from '../services/databaseApi';
 
@@ -108,12 +108,14 @@ function SchemaCell({
   options,
   onChange,
   onOpenDropdown,
+  suffix,
 }: {
   value: string;
   disabled: boolean;
   options: Array<{ label: string; value: string }>;
   onChange: (value: string) => void;
   onOpenDropdown?: () => void;
+  suffix?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -293,6 +295,7 @@ function SchemaCell({
       >
         {displayValue}
       </span>
+      {suffix}
       <span style={styles.schemaCellArrow}>
         <button
           type="button"
@@ -590,7 +593,10 @@ function JoinTablesModal({
                           onClick={() => handleColumnClick(columnPath)}
                         >
                           <span style={styles.joinDiagramHandle} />
-                          <span style={styles.joinDiagramColumnName}>{column.name}</span>
+                          <span style={styles.joinDiagramColumnName}>
+                            <span>{column.name}</span>
+                            {column.primaryKey && <KeyOutlined style={styles.primaryKeyIcon} />}
+                          </span>
                           <span style={styles.joinDiagramColumnType}>{column.dataType ?? ''}</span>
                         </button>
                       );
@@ -820,15 +826,18 @@ function updateMappingColumnPaths(
   selectedTables: string[],
   selectedColumns: string[],
   selectedColumnTypes: string[],
+  selectedPrimaryKeys: boolean[],
 ): MappingDto {
   const columnPathByField = new Map<string, string | undefined>();
   const columnTypeByField = new Map<string, string | undefined>();
+  const primaryKeyByField = new Map<string, boolean>();
 
   serviceRows.forEach((row, index) => {
     const schema = selectedSchemas[index] ?? '';
     const table = selectedTables[index] ?? '';
     const column = selectedColumns[index] ?? '';
     const columnType = selectedColumnTypes[index] ?? '';
+    const primaryKey = selectedPrimaryKeys[index] ?? false;
     const columnPath = schema && table && column
       ? `${schema}.${table}.${column}`
       : schema && table
@@ -836,6 +845,7 @@ function updateMappingColumnPaths(
         : schema || undefined;
     columnPathByField.set(row.name, columnPath);
     columnTypeByField.set(row.name, columnType || undefined);
+    primaryKeyByField.set(row.name, primaryKey);
   });
 
   const updateEntries = (entries: MappingFieldEntry[], prefix = ''): MappingFieldEntry[] => entries.map(entry => {
@@ -847,6 +857,7 @@ function updateMappingColumnPaths(
 
       if (columnPath) {
         const columnType = columnTypeByField.get(fieldPath);
+        const primaryKey = primaryKeyByField.get(fieldPath) ?? false;
         nextEntry.databaseInfo = {
           ...nextEntry.databaseInfo,
           columnPath,
@@ -856,10 +867,12 @@ function updateMappingColumnPaths(
         } else {
           delete nextEntry.databaseInfo.columnType;
         }
+        nextEntry.databaseInfo.primaryKey = primaryKey;
       } else {
         const databaseInfo = { ...(nextEntry.databaseInfo ?? {}) };
         delete databaseInfo.columnPath;
         delete databaseInfo.columnType;
+        delete databaseInfo.primaryKey;
         nextEntry.databaseInfo = Object.keys(databaseInfo).length > 0 ? databaseInfo : undefined;
       }
     }
@@ -930,6 +943,7 @@ function MappingGrid({
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [selectedColumnTypes, setSelectedColumnTypes] = useState<string[]>([]);
+  const [selectedPrimaryKeys, setSelectedPrimaryKeys] = useState<boolean[]>([]);
   const [joinSelectionMode, setJoinSelectionMode] = useState(false);
   const [selectedJoinRowIndexes, setSelectedJoinRowIndexes] = useState<Set<number>>(() => new Set());
   const [joinModalOpen, setJoinModalOpen] = useState(false);
@@ -960,6 +974,12 @@ function MappingGrid({
       const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
       return entry?.databaseInfo?.columnType ?? '';
     }));
+
+    setSelectedPrimaryKeys(Array.from({ length: databaseRowCount }, (_, index) => {
+      const row = serviceRows[index];
+      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      return entry?.databaseInfo?.primaryKey ?? false;
+    }));
   }, [databaseRowCount, mapping, serviceRows]);
 
   const schemaOptions = schemas.map(schema => ({
@@ -972,14 +992,36 @@ function MappingGrid({
     nextTables: string[],
     nextColumns: string[],
     nextColumnTypes: string[],
+    nextPrimaryKeys: boolean[],
   ) => {
     if (!mapping) {
       return;
     }
 
+    const resolvedPrimaryKeys = nextColumns.map((columnName, index) => {
+      const schemaName = nextSchemas[index] ?? '';
+      const tableName = nextTables[index] ?? '';
+
+      if (!schemaName || !tableName || !columnName) {
+        return false;
+      }
+
+      const tableKey = createTableKey(schemaName, tableName);
+      const columnInfo = (columnsByTable[tableKey] ?? []).find(column => column.name === columnName);
+      return columnInfo?.primaryKey ?? nextPrimaryKeys[index] ?? false;
+    });
+
     onChangeMapping(
       endpointId,
-      updateMappingColumnPaths(mapping, serviceRows, nextSchemas, nextTables, nextColumns, nextColumnTypes),
+      updateMappingColumnPaths(
+        mapping,
+        serviceRows,
+        nextSchemas,
+        nextTables,
+        nextColumns,
+        nextColumnTypes,
+        resolvedPrimaryKeys,
+      ),
     );
   };
 
@@ -1026,6 +1068,22 @@ function MappingGrid({
       setJoinModalOpen(false);
     }
   }, [joinSelectionMode]);
+
+  useEffect(() => {
+    setSelectedPrimaryKeys(currentPrimaryKeys => currentPrimaryKeys.map((currentPrimaryKey, index) => {
+      const schemaName = selectedSchemas[index] ?? '';
+      const tableName = selectedTables[index] ?? '';
+      const columnName = selectedColumns[index] ?? '';
+
+      if (!schemaName || !tableName || !columnName) {
+        return false;
+      }
+
+      const tableKey = createTableKey(schemaName, tableName);
+      const columnInfo = (columnsByTable[tableKey] ?? []).find(column => column.name === columnName);
+      return columnInfo?.primaryKey ?? currentPrimaryKey;
+    }));
+  }, [columnsByTable, selectedColumns, selectedSchemas, selectedTables]);
 
   useEffect(() => {
     if (!joinModalOpen) {
@@ -1107,6 +1165,7 @@ function MappingGrid({
           const selectedTable = selectedTables[index] ?? '';
           const selectedColumn = selectedColumns[index] ?? '';
           const selectedColumnType = selectedColumnTypes[index] ?? '';
+          const selectedPrimaryKey = selectedPrimaryKeys[index] ?? false;
           const tableKey = selectedSchema && selectedTable ? createTableKey(selectedSchema, selectedTable) : '';
           const tablesStatus = selectedSchema ? (tablesStatusBySchema[selectedSchema] ?? 'idle') : 'idle';
           const columnsStatus = tableKey ? (columnsStatusByTable[tableKey] ?? 'idle') : 'idle';
@@ -1136,16 +1195,19 @@ function MappingGrid({
                     const nextTables = [...selectedTables];
                     const nextColumns = [...selectedColumns];
                     const nextColumnTypes = [...selectedColumnTypes];
+                    const nextPrimaryKeys = [...selectedPrimaryKeys];
                     if (previousSchema !== value) {
                       nextTables[index] = '';
                       nextColumns[index] = '';
                       nextColumnTypes[index] = '';
+                      nextPrimaryKeys[index] = false;
                     }
 
                     setSelectedSchemas(nextSchemas);
                     setSelectedTables(nextTables);
                     setSelectedColumns(nextColumns);
                     setSelectedColumnTypes(nextColumnTypes);
+                    setSelectedPrimaryKeys(nextPrimaryKeys);
                     setSelectedJoinRowIndexes(prev => {
                       if (!prev.has(index)) {
                         return prev;
@@ -1155,7 +1217,7 @@ function MappingGrid({
                       next.delete(index);
                       return next;
                     });
-                    emitMappingChange(nextSchemas, nextTables, nextColumns, nextColumnTypes);
+                    emitMappingChange(nextSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
 
                     if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
                       onLoadTables(endpointId, value);
@@ -1188,14 +1250,17 @@ function MappingGrid({
 
                       const nextColumns = [...selectedColumns];
                       const nextColumnTypes = [...selectedColumnTypes];
+                      const nextPrimaryKeys = [...selectedPrimaryKeys];
                       if (previousTable !== value) {
                         nextColumns[index] = '';
                         nextColumnTypes[index] = '';
+                        nextPrimaryKeys[index] = false;
                       }
 
                       setSelectedTables(nextTables);
                       setSelectedColumns(nextColumns);
                       setSelectedColumnTypes(nextColumnTypes);
+                      setSelectedPrimaryKeys(nextPrimaryKeys);
                       setSelectedJoinRowIndexes(prev => {
                         if (!prev.has(index) || previousTable === value) {
                           return prev;
@@ -1205,7 +1270,7 @@ function MappingGrid({
                         next.delete(index);
                         return next;
                       });
-                      emitMappingChange(selectedSchemas, nextTables, nextColumns, nextColumnTypes);
+                      emitMappingChange(selectedSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
 
                       if (selectedSchema && value && (columnsStatusByTable[createTableKey(selectedSchema, value)] ?? 'idle') === 'idle') {
                         onLoadColumns(endpointId, selectedSchema, value);
@@ -1219,6 +1284,7 @@ function MappingGrid({
                   value={selectedColumn}
                   options={columnOptions}
                   disabled={!selectedSchema || !selectedTable}
+                  suffix={(selectedColumnInfo?.primaryKey ?? selectedPrimaryKey) ? <KeyOutlined style={styles.primaryKeyIcon} /> : null}
                   onOpenDropdown={() => {
                     if (selectedSchema && selectedTable && columnsStatus === 'idle') {
                       onLoadColumns(endpointId, selectedSchema, selectedTable);
@@ -1230,10 +1296,13 @@ function MappingGrid({
                     const selectedColumnInfo = columns.find(column => column.name === value);
                     const nextColumnTypes = [...selectedColumnTypes];
                     nextColumnTypes[index] = selectedColumnInfo?.dataType ?? '';
+                    const nextPrimaryKeys = [...selectedPrimaryKeys];
+                    nextPrimaryKeys[index] = selectedColumnInfo?.primaryKey ?? false;
 
                     setSelectedColumns(nextColumns);
                     setSelectedColumnTypes(nextColumnTypes);
-                    emitMappingChange(selectedSchemas, selectedTables, nextColumns, nextColumnTypes);
+                    setSelectedPrimaryKeys(nextPrimaryKeys);
+                    emitMappingChange(selectedSchemas, selectedTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
                   }}
                 />
               </span>
@@ -1767,6 +1836,7 @@ const styles: Record<string, CSSProperties> = {
   gridCellTextMuted: {
     display: 'flex',
     alignItems: 'center',
+    gap: 8,
     padding: '0 12px',
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
@@ -2124,6 +2194,9 @@ const styles: Record<string, CSSProperties> = {
     background: '#181818',
   },
   joinDiagramColumnName: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
     minWidth: 0,
     overflow: 'hidden',
     whiteSpace: 'nowrap',
@@ -2131,6 +2204,11 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontFamily: 'monospace',
     lineHeight: '18px',
+  },
+  primaryKeyIcon: {
+    flexShrink: 0,
+    color: '#b7eb8f',
+    fontSize: 12,
   },
   joinDiagramColumnType: {
     color: 'rgba(255,255,255,0.36)',

@@ -46,7 +46,7 @@ export interface FieldServiceInfo {
 export interface FieldDatabaseInfo {
   columnPath?: string;
   columnType?: string;
-  isPrimaryKey?: boolean;
+  primaryKey?: boolean;
 }
 
 export interface JoinConditionPairDto {
