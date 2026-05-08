@@ -14,6 +14,7 @@ export interface DbColumnResponse {
   nullable?: boolean;
   ordinalPosition?: number;
   columnDefault?: string;
+  primaryKey?: boolean;
 }
 
 export async function getServiceDatabase(serviceId: number): Promise<DatabaseResponse | null> {
