@@ -189,7 +189,7 @@ function createMappingWithResponseModel(tab: EndpointMappingTab, responseModel: 
 function prepareMappingForSave(mapping: MappingDto): MappingDto {
   return {
     ...mapping,
-    joins: [],
+    joins: mapping.joins ?? [],
   };
 }
 
