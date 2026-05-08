@@ -1,7 +1,7 @@
 import { CloseOutlined, DownOutlined } from '@ant-design/icons';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { EndpointMappingTab, MappingDto, MappingFieldEntry } from '../services/endpointsApi';
+import type { EndpointMappingTab, JoinEntryDto, MappingDto, MappingFieldEntry } from '../services/endpointsApi';
 import type { DatabaseResponse, DbColumnResponse } from '../services/databaseApi';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
@@ -58,8 +58,34 @@ interface SelectedJoinTable {
   tableName: string;
 }
 
+interface JoinEdgePoint {
+  key: string;
+  x: number;
+  y: number;
+}
+
+interface JoinEdgeLine {
+  join: JoinEntryDto;
+  joinIndex: number;
+  leftPoint: JoinEdgePoint;
+  rightPoint: JoinEdgePoint;
+}
+
 function createTableKey(schemaName: string, tableName: string): string {
   return JSON.stringify([schemaName, tableName]);
+}
+
+function createColumnPath(schemaName: string, tableName: string, columnName: string): string {
+  return `${schemaName}.${tableName}.${columnName}`;
+}
+
+function getTableKeyFromColumnPath(columnPath: string | undefined): string | null {
+  if (!columnPath) {
+    return null;
+  }
+
+  const [schemaName = '', tableName = ''] = columnPath.split('.');
+  return schemaName && tableName ? createTableKey(schemaName, tableName) : null;
 }
 
 function parseTableKey(tableKey: string): SelectedJoinTable | null {
@@ -351,36 +377,151 @@ function JoinTablesModal({
   open,
   tables,
   columnsByTable,
+  joins,
+  onChangeJoins,
   onClose,
 }: {
   open: boolean;
   tables: SelectedJoinTable[];
   columnsByTable: MappingWorkspaceTab['columnsByTable'];
+  joins: JoinEntryDto[];
+  onChangeJoins: (joins: JoinEntryDto[]) => void;
   onClose: () => void;
 }) {
-  const [leftTableKey, setLeftTableKey] = useState('');
-  const [rightTableKey, setRightTableKey] = useState('');
-  const [leftColumn, setLeftColumn] = useState('');
-  const [rightColumn, setRightColumn] = useState('');
+  const diagramRef = useRef<HTMLDivElement | null>(null);
+  const columnButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [edgePoints, setEdgePoints] = useState<Record<string, JoinEdgePoint>>({});
+  const [pendingColumnPath, setPendingColumnPath] = useState<string | null>(null);
+  const [selectedJoinIndex, setSelectedJoinIndex] = useState<number | null>(null);
   const tablesSignature = tables.map(table => table.key).join('|');
+  const selectedTableKeys = new Set(tables.map(table => table.key));
+  const visibleJoins = joins
+    .map((join, index) => ({ join, index }))
+    .filter(({ join }) => (
+      selectedTableKeys.has(getTableKeyFromColumnPath(join.left) ?? '')
+      && selectedTableKeys.has(getTableKeyFromColumnPath(join.right) ?? '')
+    ));
+
+  const updateEdgePoints = () => {
+    const diagram = diagramRef.current;
+    if (!diagram) {
+      return;
+    }
+
+    const diagramRect = diagram.getBoundingClientRect();
+    const nextPoints: Record<string, JoinEdgePoint> = {};
+
+    Object.entries(columnButtonRefs.current).forEach(([columnPath, element]) => {
+      if (!element) {
+        return;
+      }
+
+      const rect = element.getBoundingClientRect();
+      nextPoints[columnPath] = {
+        key: columnPath,
+        x: rect.left - diagramRect.left + rect.width / 2,
+        y: rect.top - diagramRect.top + rect.height / 2,
+      };
+    });
+
+    setEdgePoints(nextPoints);
+  };
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    setLeftTableKey(tables[0]?.key ?? '');
-    setRightTableKey(tables[1]?.key ?? tables[0]?.key ?? '');
-    setLeftColumn('');
-    setRightColumn('');
+    setPendingColumnPath(null);
+    setSelectedJoinIndex(null);
   }, [open, tablesSignature]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    updateEdgePoints();
+  }, [columnsByTable, joins, open, tablesSignature]);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    window.addEventListener('resize', updateEdgePoints);
+    return () => window.removeEventListener('resize', updateEdgePoints);
+  }, [open]);
 
   if (!open) {
     return null;
   }
 
-  const leftColumns = leftTableKey ? (columnsByTable[leftTableKey] ?? []) : [];
-  const rightColumns = rightTableKey ? (columnsByTable[rightTableKey] ?? []) : [];
+  const edgeLines = visibleJoins
+    .map<JoinEdgeLine | null>(({ join, index }) => {
+      const leftPoint = join.left ? edgePoints[join.left] : undefined;
+      const rightPoint = join.right ? edgePoints[join.right] : undefined;
+
+      return leftPoint && rightPoint
+        ? { join, joinIndex: index, leftPoint, rightPoint }
+        : null;
+    })
+    .filter((line): line is JoinEdgeLine => line !== null);
+
+  const selectedJoin = selectedJoinIndex !== null ? joins[selectedJoinIndex] : null;
+
+  const handleColumnClick = (columnPath: string) => {
+    if (!pendingColumnPath) {
+      setPendingColumnPath(columnPath);
+      return;
+    }
+
+    if (pendingColumnPath === columnPath) {
+      setPendingColumnPath(null);
+      return;
+    }
+
+    const pendingTableKey = getTableKeyFromColumnPath(pendingColumnPath);
+    const nextTableKey = getTableKeyFromColumnPath(columnPath);
+
+    if (!pendingTableKey || !nextTableKey || pendingTableKey === nextTableKey) {
+      setPendingColumnPath(columnPath);
+      return;
+    }
+
+    const existingJoinIndex = joins.findIndex(join => (
+      (join.left === pendingColumnPath && join.right === columnPath)
+      || (join.left === columnPath && join.right === pendingColumnPath)
+    ));
+
+    if (existingJoinIndex >= 0) {
+      setSelectedJoinIndex(existingJoinIndex);
+      setPendingColumnPath(null);
+      return;
+    }
+
+    const nextJoins = [
+      ...joins,
+      {
+        left: pendingColumnPath,
+        right: columnPath,
+        additionalJoinConditions: [],
+      },
+    ];
+
+    onChangeJoins(nextJoins);
+    setSelectedJoinIndex(nextJoins.length - 1);
+    setPendingColumnPath(null);
+  };
+
+  const deleteSelectedJoin = () => {
+    if (selectedJoinIndex === null) {
+      return;
+    }
+
+    onChangeJoins(joins.filter((_, index) => index !== selectedJoinIndex));
+    setSelectedJoinIndex(null);
+  };
 
   return (
     <div style={styles.modalOverlay}>
@@ -395,56 +536,90 @@ function JoinTablesModal({
           </button>
         </div>
 
-        <div style={styles.joinSelectedTables}>
-          {tables.map(table => (
-            <span key={table.key} style={styles.joinTablePill}>
-              {table.schemaName}.{table.tableName}
-            </span>
-          ))}
-        </div>
+        <div ref={diagramRef} style={styles.joinDiagram}>
+          <svg style={styles.joinDiagramSvg}>
+            {edgeLines.map(line => {
+              const selected = line.joinIndex === selectedJoinIndex;
 
-        <div style={styles.joinEditorGrid}>
-          <span style={styles.joinEditorLabel}>Left table</span>
-          <SchemaCell
-            value={leftTableKey}
-            options={tables.map(table => ({ label: `${table.schemaName}.${table.tableName}`, value: table.key }))}
-            disabled={tables.length === 0}
-            onChange={value => {
-              setLeftTableKey(value);
-              setLeftColumn('');
-            }}
-          />
+              return (
+                <g key={`${line.join.left}-${line.join.right}`}>
+                  <line
+                    x1={line.leftPoint.x}
+                    y1={line.leftPoint.y}
+                    x2={line.rightPoint.x}
+                    y2={line.rightPoint.y}
+                    style={styles.joinEdgeHitArea}
+                    onClick={() => setSelectedJoinIndex(line.joinIndex)}
+                  />
+                  <line
+                    x1={line.leftPoint.x}
+                    y1={line.leftPoint.y}
+                    x2={line.rightPoint.x}
+                    y2={line.rightPoint.y}
+                    style={selected ? styles.joinEdgeSelected : styles.joinEdge}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+          <div style={styles.joinTableCanvas} onScroll={updateEdgePoints}>
+            {tables.map(table => {
+              const columns = columnsByTable[table.key] ?? [];
 
-          <span style={styles.joinEditorLabel}>Left column</span>
-          <SchemaCell
-            value={leftColumn}
-            options={leftColumns.map(column => ({ label: column.name, value: column.name }))}
-            disabled={!leftTableKey}
-            onChange={setLeftColumn}
-          />
+              return (
+                <div key={table.key} style={styles.joinDiagramTable}>
+                  <div style={styles.joinDiagramTableHeader}>{table.schemaName}.{table.tableName}</div>
+                  <div style={styles.joinDiagramColumnList}>
+                    {columns.length === 0 ? (
+                      <span style={styles.joinDiagramEmptyColumns}>Loading columns...</span>
+                    ) : columns.map(column => {
+                      const columnPath = createColumnPath(table.schemaName, table.tableName, column.name);
+                      const pending = pendingColumnPath === columnPath;
 
-          <span style={styles.joinEditorLabel}>Right table</span>
-          <SchemaCell
-            value={rightTableKey}
-            options={tables.map(table => ({ label: `${table.schemaName}.${table.tableName}`, value: table.key }))}
-            disabled={tables.length === 0}
-            onChange={value => {
-              setRightTableKey(value);
-              setRightColumn('');
-            }}
-          />
-
-          <span style={styles.joinEditorLabel}>Right column</span>
-          <SchemaCell
-            value={rightColumn}
-            options={rightColumns.map(column => ({ label: column.name, value: column.name }))}
-            disabled={!rightTableKey}
-            onChange={setRightColumn}
-          />
+                      return (
+                        <button
+                          key={columnPath}
+                          ref={element => {
+                            columnButtonRefs.current[columnPath] = element;
+                          }}
+                          type="button"
+                          style={{
+                            ...styles.joinDiagramColumn,
+                            ...(pending ? styles.joinDiagramColumnPending : null),
+                          }}
+                          onClick={() => handleColumnClick(columnPath)}
+                        >
+                          <span style={styles.joinDiagramHandle} />
+                          <span style={styles.joinDiagramColumnName}>{column.name}</span>
+                          <span style={styles.joinDiagramColumnType}>{column.dataType ?? ''}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div style={styles.joinModalFooter}>
-          <span style={styles.joinModalNote}>Saving join conditions will be wired after the mapping JSON shape is finalized.</span>
+          <div style={styles.joinInspector}>
+            {selectedJoin ? (
+              <>
+                <span style={styles.joinInspectorTitle}>Selected join</span>
+                <span style={styles.joinInspectorPath}>{selectedJoin.left}</span>
+                <span style={styles.joinInspectorOperator}>=</span>
+                <span style={styles.joinInspectorPath}>{selectedJoin.right}</span>
+                <button type="button" style={styles.joinDeleteButton} onClick={deleteSelectedJoin}>
+                  Delete
+                </button>
+              </>
+            ) : (
+              <span style={styles.joinModalNote}>
+                Click one column, then a column from another table to create a join.
+              </span>
+            )}
+          </div>
           <button type="button" style={styles.joinModalActionButton} onClick={onClose}>
             Close
           </button>
@@ -808,6 +983,17 @@ function MappingGrid({
     );
   };
 
+  const emitJoinsChange = (joins: JoinEntryDto[]) => {
+    if (!mapping) {
+      return;
+    }
+
+    onChangeMapping(endpointId, {
+      ...mapping,
+      joins,
+    });
+  };
+
   const selectedJoinTables = Array.from(selectedJoinRowIndexes)
     .map(index => {
       const schemaName = selectedSchemas[index] ?? '';
@@ -818,6 +1004,7 @@ function MappingGrid({
     .filter((tableKey, index, tableKeys) => tableKeys.indexOf(tableKey) === index)
     .map(parseTableKey)
     .filter((table): table is SelectedJoinTable => table !== null);
+  const selectedJoinTablesSignature = selectedJoinTables.map(table => table.key).join('|');
 
   const toggleJoinRowSelection = (rowIndex: number) => {
     setSelectedJoinRowIndexes(prev => {
@@ -850,7 +1037,7 @@ function MappingGrid({
         onLoadColumns(endpointId, table.schemaName, table.tableName);
       }
     });
-  }, [columnsStatusByTable, endpointId, joinModalOpen, onLoadColumns, selectedJoinTables]);
+  }, [columnsStatusByTable, endpointId, joinModalOpen, onLoadColumns, selectedJoinTablesSignature]);
 
   return (
     <>
@@ -1073,6 +1260,8 @@ function MappingGrid({
       open={joinModalOpen}
       tables={selectedJoinTables}
       columnsByTable={columnsByTable}
+      joins={mapping?.joins ?? []}
+      onChangeJoins={emitJoinsChange}
       onClose={() => setJoinModalOpen(false)}
     />
     </>
@@ -1777,7 +1966,7 @@ const styles: Record<string, CSSProperties> = {
     background: 'rgba(0,0,0,0.58)',
   },
   joinModal: {
-    width: 'min(760px, 100%)',
+    width: 'min(980px, 100%)',
     maxHeight: 'calc(100vh - 48px)',
     display: 'flex',
     flexDirection: 'column',
@@ -1836,31 +2025,160 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: 'monospace',
     lineHeight: '18px',
   },
-  joinEditorGrid: {
-    display: 'grid',
-    gridTemplateColumns: '120px minmax(0, 1fr)',
+  joinDiagram: {
+    position: 'relative',
+    minHeight: 360,
     border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: 6,
     overflow: 'hidden',
+    background: '#181818',
   },
-  joinEditorLabel: {
+  joinDiagramSvg: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    pointerEvents: 'auto',
+    zIndex: 1,
+  },
+  joinEdgeHitArea: {
+    stroke: 'transparent',
+    strokeWidth: 14,
+    cursor: 'pointer',
+    pointerEvents: 'stroke',
+  },
+  joinEdge: {
+    stroke: 'rgba(105,177,255,0.72)',
+    strokeWidth: 2,
+    pointerEvents: 'none',
+  },
+  joinEdgeSelected: {
+    stroke: '#49cc90',
+    strokeWidth: 3,
+    pointerEvents: 'none',
+  },
+  joinTableCanvas: {
+    position: 'relative',
+    zIndex: 2,
     display: 'flex',
-    alignItems: 'center',
-    minHeight: 40,
-    borderRight: '1px solid rgba(255,255,255,0.08)',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
-    background: 'rgba(255,255,255,0.03)',
-    color: 'rgba(255,255,255,0.46)',
-    padding: '0 12px',
-    fontSize: 11,
+    alignItems: 'flex-start',
+    gap: 28,
+    minHeight: 360,
+    overflow: 'auto',
+    padding: 24,
+    pointerEvents: 'none',
+  },
+  joinDiagramTable: {
+    width: 230,
+    flexShrink: 0,
+    pointerEvents: 'auto',
+    overflow: 'hidden',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 7,
+    background: '#202020',
+    boxShadow: '0 10px 24px rgba(0,0,0,0.25)',
+  },
+  joinDiagramTableHeader: {
+    padding: '9px 12px',
+    borderBottom: '1px solid rgba(255,255,255,0.1)',
+    background: 'rgba(64,150,255,0.16)',
+    color: 'rgba(255,255,255,0.86)',
+    fontSize: 12,
     fontWeight: 700,
-    textTransform: 'uppercase',
+    fontFamily: 'monospace',
+    lineHeight: '18px',
+  },
+  joinDiagramColumnList: {
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '6px 0',
+  },
+  joinDiagramEmptyColumns: {
+    padding: '8px 12px',
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 12,
+  },
+  joinDiagramColumn: {
+    width: '100%',
+    minHeight: 30,
+    display: 'grid',
+    gridTemplateColumns: '14px minmax(0, 1fr) auto',
+    alignItems: 'center',
+    gap: 8,
+    border: 'none',
+    background: 'transparent',
+    color: 'rgba(255,255,255,0.72)',
+    padding: '0 10px',
+    textAlign: 'left',
+    cursor: 'crosshair',
+  },
+  joinDiagramColumnPending: {
+    background: 'rgba(73,204,144,0.16)',
+    color: 'rgba(255,255,255,0.92)',
+  },
+  joinDiagramHandle: {
+    width: 9,
+    height: 9,
+    borderRadius: '50%',
+    border: '1px solid rgba(105,177,255,0.9)',
+    background: '#181818',
+  },
+  joinDiagramColumnName: {
+    minWidth: 0,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    lineHeight: '18px',
+  },
+  joinDiagramColumnType: {
+    color: 'rgba(255,255,255,0.36)',
+    fontSize: 11,
+    fontFamily: 'monospace',
   },
   joinModalFooter: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: 16,
+  },
+  joinInspector: {
+    flex: '1 1 auto',
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  joinInspectorTitle: {
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  joinInspectorPath: {
+    maxWidth: 260,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
+  joinInspectorOperator: {
+    color: '#49cc90',
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  joinDeleteButton: {
+    minHeight: 28,
+    border: '1px solid rgba(255,120,117,0.36)',
+    borderRadius: 4,
+    background: 'rgba(255,120,117,0.08)',
+    color: '#ffccc7',
+    padding: '0 10px',
+    fontSize: 12,
+    cursor: 'pointer',
   },
   joinModalNote: {
     color: 'rgba(255,255,255,0.38)',
