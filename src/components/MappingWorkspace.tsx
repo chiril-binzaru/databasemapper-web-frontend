@@ -1,6 +1,6 @@
 import { CloseOutlined, KeyOutlined } from '@ant-design/icons';
 import { ChevronDown } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import type {
   EndpointMappingTab,
@@ -89,6 +89,11 @@ interface JoinEdgeLine {
   rightPoint: JoinEdgePoint;
 }
 
+interface ScopeEntry {
+  path: string;
+  tables: SelectedJoinTable[];
+}
+
 function createTableKey(schemaName: string, tableName: string): string {
   return JSON.stringify([schemaName, tableName]);
 }
@@ -118,6 +123,77 @@ function parseTableKey(tableKey: string): SelectedJoinTable | null {
   }
 
   return null;
+}
+
+function getScopesFromMapping(
+  mapping: MappingDto | null,
+  selectedSchemas: string[],
+  selectedTables: string[],
+  serviceRows: MappingGridRow[],
+): ScopeEntry[] {
+  if (!mapping) {
+    return [];
+  }
+
+  const tableKeyByField = new Map<string, string>();
+  serviceRows.forEach((row, index) => {
+    const schema = selectedSchemas[index] ?? '';
+    const table = selectedTables[index] ?? '';
+    if (schema && table) {
+      tableKeyByField.set(row.name, createTableKey(schema, table));
+    }
+  });
+
+  const scopes: ScopeEntry[] = [];
+
+  // Returns all distinct tableKeys collected in this scope AND all descendants,
+  // so each parent scope can include its children's tables.
+  const traverse = (entries: MappingFieldEntry[], scopePath: string, prefix: string): string[] => {
+    const ownTableKeys: string[] = [];
+    const childInfos: Array<{ childMappings: MappingFieldEntry[]; childPath: string; childPrefix: string }> = [];
+
+    for (const entry of entries) {
+      const fieldPath = prefix
+        ? `${prefix}.${entry.serviceInfo.modelField}`
+        : entry.serviceInfo.modelField;
+
+      if (entry.fieldMappings && entry.fieldMappings.length > 0) {
+        const childPath = scopePath === '/'
+          ? `/${entry.serviceInfo.modelField}`
+          : `${scopePath}/${entry.serviceInfo.modelField}`;
+        childInfos.push({ childMappings: entry.fieldMappings, childPath, childPrefix: fieldPath });
+      } else {
+        const tableKey = tableKeyByField.get(fieldPath);
+        if (tableKey) ownTableKeys.push(tableKey);
+      }
+    }
+
+    const descendantKeys: string[] = [];
+    childInfos.forEach(({ childMappings, childPath, childPrefix }) => {
+      const childKeys = traverse(childMappings, childPath, childPrefix);
+      descendantKeys.push(...childKeys);
+    });
+
+    const allTableKeySet = new Set([...ownTableKeys, ...descendantKeys]);
+    const tables = Array.from(allTableKeySet)
+      .map(parseTableKey)
+      .filter((t): t is SelectedJoinTable => t !== null);
+
+    scopes.push({ path: scopePath, tables });
+
+    return Array.from(allTableKeySet);
+  };
+
+  traverse(mapping.fieldMappings, '/', '');
+
+  // Sort shallowest scope first so / is always scopes[0]
+  scopes.sort((a, b) => {
+    const aDepth = a.path === '/' ? 0 : a.path.split('/').length - 1;
+    const bDepth = b.path === '/' ? 0 : b.path.split('/').length - 1;
+    return aDepth - bDepth;
+  });
+
+  return scopes;
 }
 
 function SchemaCell({
@@ -371,64 +447,138 @@ function TabDirtyIndicator() {
   return <span aria-label="Unsaved changes" style={styles.tabDirtyIndicator} />;
 }
 
-function SelectableTableCell({
+function ScopeSelect({
   value,
-  selected,
-  disabled,
-  onToggle,
+  scopes,
+  onChange,
 }: {
-  value: string;
-  selected: boolean;
-  disabled: boolean;
-  onToggle: () => void;
+  value: number;
+  scopes: ScopeEntry[];
+  onChange: (index: number) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
+
+  const close = () => {
+    setOpen(false);
+    setHoveredIndex(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      style={{
-        ...styles.joinSelectableCell,
-        ...(selected ? styles.joinSelectableCellSelected : null),
-        ...(disabled ? styles.joinSelectableCellDisabled : null),
-      }}
-      onClick={() => {
-        if (!disabled) {
-          onToggle();
-        }
-      }}
-    >
-      <span style={styles.schemaCellLabel}>{value}</span>
-    </button>
+    <div style={styles.scopeSelectShell}>
+      <button
+        type="button"
+        style={styles.scopeSelectTrigger}
+        onClick={() => setOpen(o => !o)}
+        onBlur={() => {
+          blurTimeoutRef.current = window.setTimeout(close, 0);
+        }}
+        onFocus={() => {
+          if (blurTimeoutRef.current !== null) {
+            window.clearTimeout(blurTimeoutRef.current);
+            blurTimeoutRef.current = null;
+          }
+        }}
+      >
+        <span style={styles.schemaCellLabel}>{scopes[value]?.path ?? ''}</span>
+        <ChevronDown size={13} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+      </button>
+      {open && (
+        <div style={styles.scopeSelectDropdown}>
+          {scopes.map((scope, i) => (
+            <button
+              key={scope.path}
+              type="button"
+              style={{
+                ...styles.schemaDropdownOption,
+                ...(i === value ? styles.schemaDropdownOptionSelected : null),
+                ...(i === hoveredIndex ? styles.schemaDropdownOptionHovered : null),
+              }}
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => { onChange(i); close(); }}
+              onMouseEnter={() => setHoveredIndex(i)}
+              onMouseLeave={() => setHoveredIndex(null)}
+            >
+              {scope.path}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function JoinTablesModal({
+function JoinDefinitionModal({
   open,
-  tables,
+  scopes,
+  schemasStatus,
+  schemas,
   columnsByTable,
+  columnsStatusByTable,
+  tablesBySchema,
+  tablesStatusBySchema,
   joins,
+  endpointId,
+  onLoadTables,
+  onLoadColumns,
   onChangeJoins,
   onClose,
 }: {
   open: boolean;
-  tables: SelectedJoinTable[];
+  scopes: ScopeEntry[];
+  schemasStatus: MappingWorkspaceTab['schemasStatus'];
+  schemas: string[];
   columnsByTable: MappingWorkspaceTab['columnsByTable'];
+  columnsStatusByTable: MappingWorkspaceTab['columnsStatusByTable'];
+  tablesBySchema: MappingWorkspaceTab['tablesBySchema'];
+  tablesStatusBySchema: MappingWorkspaceTab['tablesStatusBySchema'];
   joins: JoinEntryDto[];
+  endpointId: number;
+  onLoadTables: (endpointId: number, schemaName: string) => void;
+  onLoadColumns: (endpointId: number, schemaName: string, tableName: string) => void;
   onChangeJoins: (joins: JoinEntryDto[]) => void;
   onClose: () => void;
 }) {
   const diagramRef = useRef<HTMLDivElement | null>(null);
   const columnButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const deleteSelectedJoinRef = useRef<() => void>(() => {});
+  const joinsRef = useRef(joins);
+  joinsRef.current = joins;
   const [edgePoints, setEdgePoints] = useState<Record<string, JoinEdgePoint>>({});
   const [pendingColumnPath, setPendingColumnPath] = useState<string | null>(null);
+  const [hoveredColumnPath, setHoveredColumnPath] = useState<string | null>(null);
   const [selectedJoinIndex, setSelectedJoinIndex] = useState<number | null>(null);
-  const tablesSignature = tables.map(table => table.key).join('|');
-  const selectedTableKeys = new Set(tables.map(table => table.key));
+  const [selectedScopeIndex, setSelectedScopeIndex] = useState(0);
+  const [extraTables, setExtraTables] = useState<SelectedJoinTable[]>([]);
+  const [addTableSchema, setAddTableSchema] = useState('');
+  const [addTableTable, setAddTableTable] = useState('');
+
+  const currentScope = scopes[selectedScopeIndex] ?? { path: '/', tables: [] };
+  const scopeTables = currentScope.tables;
+  const scopeTableKeys = new Set(scopeTables.map(t => t.key));
+  const allTables = [
+    ...scopeTables,
+    ...extraTables.filter(t => !scopeTableKeys.has(t.key)),
+  ];
+  const tablesSignature = allTables.map(t => t.key).join('|');
+  const allTableKeys = new Set(allTables.map(t => t.key));
+
+  const schemaOptions = schemas.map(s => ({ label: s, value: s }));
+
   const visibleJoins = joins
     .map((join, index) => ({ join, index }))
     .filter(({ join }) => (
-      selectedTableKeys.has(getTableKeyFromColumnPath(join.left) ?? '')
-      && selectedTableKeys.has(getTableKeyFromColumnPath(join.right) ?? '')
+      allTableKeys.has(getTableKeyFromColumnPath(join.left) ?? '')
+      && allTableKeys.has(getTableKeyFromColumnPath(join.right) ?? '')
     ));
 
   const updateEdgePoints = () => {
@@ -456,20 +606,66 @@ function JoinTablesModal({
     setEdgePoints(nextPoints);
   };
 
+  // Reset UI state when modal opens or scope changes
   useEffect(() => {
     if (!open) {
       return;
     }
-
     setPendingColumnPath(null);
     setSelectedJoinIndex(null);
+    setHoveredColumnPath(null);
   }, [open, tablesSignature]);
+
+  // Reset to first scope and clear selection on open
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setSelectedScopeIndex(0);
+  }, [open]);
+
+  // Re-derive extraTables from persisted joins whenever scope or open changes,
+  // so previously-defined junction tables always reappear automatically.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const currentScopeTableKeys = new Set(currentScope.tables.map(t => t.key));
+    const seen = new Set<string>();
+    const fromJoins: SelectedJoinTable[] = [];
+
+    joinsRef.current.forEach(join => {
+      [join.left, join.right].forEach(path => {
+        if (!path) {
+          return;
+        }
+        const tableKey = getTableKeyFromColumnPath(path);
+        if (tableKey && !currentScopeTableKeys.has(tableKey) && !seen.has(tableKey)) {
+          seen.add(tableKey);
+          const parsed = parseTableKey(tableKey);
+          if (parsed) {
+            fromJoins.push(parsed);
+          }
+        }
+      });
+    });
+
+    setExtraTables(fromJoins);
+    setAddTableSchema('');
+    setAddTableTable('');
+  }, [open, selectedScopeIndex]);
+
+  // Guard scope index against out-of-bounds when scopes change
+  useEffect(() => {
+    if (selectedScopeIndex >= scopes.length && scopes.length > 0) {
+      setSelectedScopeIndex(0);
+    }
+  }, [scopes.length, selectedScopeIndex]);
 
   useLayoutEffect(() => {
     if (!open) {
       return;
     }
-
     updateEdgePoints();
   }, [columnsByTable, joins, open, tablesSignature]);
 
@@ -477,9 +673,80 @@ function JoinTablesModal({
     if (!open) {
       return undefined;
     }
-
     window.addEventListener('resize', updateEdgePoints);
     return () => window.removeEventListener('resize', updateEdgePoints);
+  }, [open]);
+
+  // Load columns for every table currently shown in the diagram
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    allTables.forEach(table => {
+      if ((columnsStatusByTable[table.key] ?? 'idle') === 'idle') {
+        onLoadColumns(endpointId, table.schemaName, table.tableName);
+      }
+    });
+  }, [open, tablesSignature, columnsStatusByTable, endpointId, onLoadColumns]);
+
+  const removeExtraTable = (tableKey: string) => {
+    setExtraTables(prev => prev.filter(t => t.key !== tableKey));
+    const nextJoins = joinsRef.current.filter(join =>
+      getTableKeyFromColumnPath(join.left) !== tableKey &&
+      getTableKeyFromColumnPath(join.right) !== tableKey,
+    );
+    onChangeJoins(nextJoins);
+    setSelectedJoinIndex(prev => {
+      if (prev === null) {
+        return null;
+      }
+      const join = joinsRef.current[prev];
+      if (!join) {
+        return null;
+      }
+      return getTableKeyFromColumnPath(join.left) === tableKey
+        || getTableKeyFromColumnPath(join.right) === tableKey
+        ? null
+        : prev;
+    });
+  };
+
+  const handleAddTable = () => {
+    if (!addTableSchema || !addTableTable) {
+      return;
+    }
+    const tableKey = createTableKey(addTableSchema, addTableTable);
+    if (!allTables.find(t => t.key === tableKey)) {
+      const parsed = parseTableKey(tableKey);
+      if (parsed) {
+        setExtraTables(prev => [...prev, parsed]);
+        if ((columnsStatusByTable[tableKey] ?? 'idle') === 'idle') {
+          onLoadColumns(endpointId, addTableSchema, addTableTable);
+        }
+      }
+    }
+    setAddTableOpen(false);
+    setAddTableSchema('');
+    setAddTableTable('');
+  };
+
+  // Delete selected join via keyboard
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete') {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      deleteSelectedJoinRef.current();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open]);
 
   if (!open) {
@@ -498,7 +765,7 @@ function JoinTablesModal({
     .filter((line): line is JoinEdgeLine => line !== null);
 
   const selectedJoin = selectedJoinIndex !== null ? joins[selectedJoinIndex] : null;
-  const columnPathOptions = tables.flatMap(table => (columnsByTable[table.key] ?? []).map(column => {
+  const columnPathOptions = allTables.flatMap(table => (columnsByTable[table.key] ?? []).map(column => {
     const columnPath = createColumnPath(table.schemaName, table.tableName, column.name);
     return { label: columnPath, value: columnPath };
   }));
@@ -590,16 +857,16 @@ function JoinTablesModal({
     if (selectedJoinIndex === null) {
       return;
     }
-
     onChangeJoins(joins.filter((_, index) => index !== selectedJoinIndex));
     setSelectedJoinIndex(null);
   };
+
+  deleteSelectedJoinRef.current = deleteSelectedJoin;
 
   const updateSelectedJoin = (nextJoin: JoinEntryDto) => {
     if (selectedJoinIndex === null) {
       return;
     }
-
     onChangeJoins(joins.map((join, index) => (
       index === selectedJoinIndex ? nextJoin : join
     )));
@@ -609,7 +876,6 @@ function JoinTablesModal({
     if (!selectedJoin) {
       return;
     }
-
     updateSelectedJoin({
       ...selectedJoin,
       additionalJoinConditions: [
@@ -630,7 +896,6 @@ function JoinTablesModal({
     if (!selectedJoin) {
       return;
     }
-
     updateSelectedJoin({
       ...selectedJoin,
       additionalJoinConditions: (selectedJoin.additionalJoinConditions ?? []).map((condition, index) => (
@@ -643,7 +908,6 @@ function JoinTablesModal({
     if (!selectedJoin) {
       return;
     }
-
     updateSelectedJoin({
       ...selectedJoin,
       additionalJoinConditions: (selectedJoin.additionalJoinConditions ?? []).filter((_, index) => index !== conditionIndex),
@@ -653,166 +917,223 @@ function JoinTablesModal({
   return (
     <div style={styles.modalOverlay}>
       <div style={styles.joinModal}>
+
+        {/* Row 1 — title + scope + close */}
         <div style={styles.joinModalHeader}>
-          <div style={styles.joinModalTitleGroup}>
-            <span style={styles.joinModalTitle}>Define join</span>
-            <span style={styles.joinModalSubtitle}>{tables.length} distinct table{tables.length === 1 ? '' : 's'} selected</span>
+          <span style={styles.joinModalTitle}>Define joins</span>
+          <div style={styles.joinScopeRow}>
+            <span style={styles.joinScopeLabel}>Scope</span>
+            <ScopeSelect
+              value={selectedScopeIndex}
+              scopes={scopes}
+              onChange={setSelectedScopeIndex}
+            />
           </div>
           <button type="button" style={styles.joinModalCloseButton} onClick={onClose}>
             <CloseOutlined />
           </button>
         </div>
 
-        <div style={styles.joinModalBody}>
-          <div ref={diagramRef} style={styles.joinDiagram} onClick={selectEdgeFromDiagramClick}>
-            <svg style={styles.joinDiagramSvg}>
-              {edgeLines.map(line => {
-                const selected = line.joinIndex === selectedJoinIndex;
+        {/* Row 2 — add table controls */}
+        <div style={styles.joinAddTableRow}>
+          <SchemaCell
+            value={addTableSchema}
+            options={schemaOptions}
+            disabled={schemasStatus !== 'ready' || schemas.length === 0}
+            variant="outlined"
+            onChange={value => {
+              setAddTableSchema(value);
+              setAddTableTable('');
+              if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
+                onLoadTables(endpointId, value);
+              }
+            }}
+          />
+          <SchemaCell
+            value={addTableTable}
+            options={(tablesBySchema[addTableSchema] ?? []).map(t => ({ label: t, value: t }))}
+            disabled={!addTableSchema}
+            variant="outlined"
+            onOpenDropdown={() => {
+              if (addTableSchema && (tablesStatusBySchema[addTableSchema] ?? 'idle') === 'idle') {
+                onLoadTables(endpointId, addTableSchema);
+              }
+            }}
+            onChange={setAddTableTable}
+          />
+          <button
+            type="button"
+            style={{
+              ...styles.joinModalActionButton,
+              ...(!addTableSchema || !addTableTable ? styles.gridHeaderActionButtonDisabled : null),
+            }}
+            disabled={!addTableSchema || !addTableTable}
+            onClick={handleAddTable}
+          >
+            Add to tables space
+          </button>
+        </div>
 
-                return (
-                  <g key={`${line.join.left}-${line.join.right}`}>
-                    <line
-                      x1={line.leftPoint.x}
-                      y1={line.leftPoint.y}
-                      x2={line.rightPoint.x}
-                      y2={line.rightPoint.y}
-                      style={styles.joinEdgeHitArea}
-                      onClick={() => setSelectedJoinIndex(line.joinIndex)}
-                    />
-                    <line
-                      x1={line.leftPoint.x}
-                      y1={line.leftPoint.y}
-                      x2={line.rightPoint.x}
-                      y2={line.rightPoint.y}
-                      style={selected ? styles.joinEdgeSelected : styles.joinEdge}
-                    />
-                  </g>
-                );
-              })}
-            </svg>
-            <div style={styles.joinTableCanvas} onScroll={updateEdgePoints}>
-              {tables.map(table => {
-                const columns = columnsByTable[table.key] ?? [];
-
-                return (
-                  <div key={table.key} data-join-table="true" style={styles.joinDiagramTable}>
-                    <div style={styles.joinDiagramTableHeader}>{table.schemaName}.{table.tableName}</div>
-                    <div style={styles.joinDiagramColumnList}>
-                      {columns.length === 0 ? (
-                        <span style={styles.joinDiagramEmptyColumns}>Loading columns...</span>
-                      ) : columns.map(column => {
-                        const columnPath = createColumnPath(table.schemaName, table.tableName, column.name);
-                        const pending = pendingColumnPath === columnPath;
-
-                        return (
-                          <button
-                            key={columnPath}
-                            ref={element => {
-                              columnButtonRefs.current[columnPath] = element;
-                            }}
-                            type="button"
-                            style={{
-                              ...styles.joinDiagramColumn,
-                              ...(pending ? styles.joinDiagramColumnPending : null),
-                            }}
-                            onClick={() => handleColumnClick(columnPath)}
-                          >
-                            <span style={styles.joinDiagramHandle} />
-                            <span style={styles.joinDiagramColumnName}>
-                              <span>{column.name}</span>
-                              {column.primaryKey && <KeyOutlined style={styles.primaryKeyIcon} />}
-                            </span>
-                            <span style={styles.joinDiagramColumnType}>{column.dataType ?? ''}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+        {/* Row 3 — diagram canvas, fills remaining height */}
+        <div ref={diagramRef} style={styles.joinDiagram} onClick={selectEdgeFromDiagramClick}>
+          <svg style={styles.joinDiagramSvg}>
+            {edgeLines.map(line => {
+              const selected = line.joinIndex === selectedJoinIndex;
+              return (
+                <g key={`${line.join.left}-${line.join.right}`}>
+                  <line
+                    x1={line.leftPoint.x}
+                    y1={line.leftPoint.y}
+                    x2={line.rightPoint.x}
+                    y2={line.rightPoint.y}
+                    style={styles.joinEdgeHitArea}
+                    onClick={() => setSelectedJoinIndex(line.joinIndex)}
+                  />
+                  <line
+                    x1={line.leftPoint.x}
+                    y1={line.leftPoint.y}
+                    x2={line.rightPoint.x}
+                    y2={line.rightPoint.y}
+                    style={selected ? styles.joinEdgeSelected : styles.joinEdge}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+          <div style={styles.joinTableCanvas} onScroll={updateEdgePoints}>
+            {allTables.map(table => {
+              const columns = columnsByTable[table.key] ?? [];
+              const colStatus = columnsStatusByTable[table.key] ?? 'idle';
+              const isExtra = !scopeTableKeys.has(table.key);
+              return (
+                <div key={table.key} data-join-table="true" style={styles.joinDiagramTable}>
+                  <div style={styles.joinDiagramTableHeader}>
+                    <span style={styles.joinDiagramTableName}>{table.schemaName}.{table.tableName}</span>
+                    {isExtra && (
+                      <button
+                        type="button"
+                        style={styles.joinDiagramTableRemove}
+                        title="Remove table"
+                        onClick={() => removeExtraTable(table.key)}
+                      >
+                        <CloseOutlined />
+                      </button>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={styles.joinSidePanel}>
-            {selectedJoin ? (
-              <>
-              <div style={styles.joinSidePanelHeader}>
-                <span style={styles.joinSidePanelTitle}>Join conditions</span>
-                <button type="button" style={styles.joinDeleteButton} onClick={deleteSelectedJoin}>
-                  Delete join
-                </button>
-              </div>
-              <div style={styles.joinMainCondition}>
-                <span style={styles.joinConditionLabel}>Main join</span>
-                <span style={styles.joinInspectorPath}>{selectedJoin.left}</span>
-                <span style={styles.joinInspectorOperator}>=</span>
-                <span style={styles.joinInspectorPath}>{selectedJoin.right}</span>
-              </div>
-
-              <div style={styles.joinAdditionalHeader}>
-                <span style={styles.joinConditionLabel}>Additional conditions</span>
-                <button type="button" style={styles.joinModalActionButton} onClick={addAdditionalCondition}>
-                  Add condition
-                </button>
-              </div>
-
-              <div style={styles.joinConditionList}>
-                {(selectedJoin.additionalJoinConditions ?? []).length === 0 ? (
-                  <span style={styles.joinModalNote}>No additional conditions.</span>
-                ) : (selectedJoin.additionalJoinConditions ?? []).map((condition, conditionIndex) => (
-                  <div key={conditionIndex} style={styles.joinConditionCard}>
-                    <SchemaCell
-                      value={condition.left}
-                      options={columnPathOptions}
-                      disabled={columnPathOptions.length === 0}
-                      variant="outlined"
-                      onChange={value => updateAdditionalCondition(conditionIndex, { left: value })}
-                    />
-                    <SchemaCell
-                      value={condition.operator}
-                      options={JOIN_OPERATOR_OPTIONS}
-                      disabled={false}
-                      variant="outlined"
-                      onChange={value => updateAdditionalCondition(conditionIndex, { operator: value as JoinConditionPairDto['operator'] })}
-                    />
-                    <SchemaCell
-                      value={condition.right ?? ''}
-                      options={columnPathOptions}
-                      disabled={columnPathOptions.length === 0}
-                      variant="outlined"
-                      onChange={value => updateAdditionalCondition(conditionIndex, {
-                        right: value,
-                        rightLiteral: undefined,
-                        rightValues: undefined,
-                      })}
-                    />
-                    <button type="button" style={styles.joinConditionRemoveButton} onClick={() => removeAdditionalCondition(conditionIndex)}>
-                      Remove
-                    </button>
+                  <div style={styles.joinDiagramColumnList}>
+                    {colStatus === 'error' ? (
+                      <span style={styles.joinDiagramEmptyColumns}>Failed to load columns.</span>
+                    ) : columns.length === 0 ? (
+                      <span style={styles.joinDiagramEmptyColumns}>Loading columns...</span>
+                    ) : columns.map(column => {
+                      const columnPath = createColumnPath(table.schemaName, table.tableName, column.name);
+                      const isPending = pendingColumnPath === columnPath;
+                      const isHovered = hoveredColumnPath === columnPath && !isPending;
+                      const isTarget = pendingColumnPath !== null
+                        && hoveredColumnPath === columnPath
+                        && getTableKeyFromColumnPath(pendingColumnPath) !== getTableKeyFromColumnPath(columnPath);
+                      const isSelectedMember = selectedJoin !== null
+                        && (selectedJoin.left === columnPath || selectedJoin.right === columnPath);
+                      return (
+                        <button
+                          key={columnPath}
+                          ref={element => { columnButtonRefs.current[columnPath] = element; }}
+                          type="button"
+                          style={{
+                            ...styles.joinDiagramColumn,
+                            ...(isPending ? styles.joinDiagramColumnPending : null),
+                            ...(isTarget ? styles.joinDiagramColumnTarget : null),
+                            ...(isHovered ? styles.joinDiagramColumnHovered : null),
+                            ...(isSelectedMember ? styles.joinDiagramColumnSelectedMember : null),
+                          }}
+                          onClick={() => handleColumnClick(columnPath)}
+                          onMouseEnter={() => setHoveredColumnPath(columnPath)}
+                          onMouseLeave={() => setHoveredColumnPath(null)}
+                        >
+                          <span style={styles.joinDiagramHandle} />
+                          <span style={styles.joinDiagramColumnName}>
+                            <span>{column.name}</span>
+                            {column.primaryKey && <KeyOutlined style={styles.primaryKeyIcon} />}
+                          </span>
+                          <span style={styles.joinDiagramColumnType}>{column.dataType ?? ''}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-              </>
-            ) : (
-              <div style={styles.joinSidePanelEmpty}>
-                Select a join line to define additional conditions.
-              </div>
-            )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        <div style={styles.joinModalFooter}>
-          <div style={styles.joinInspector}>
+        {/* Row 4 — join conditions panel */}
+        <div style={styles.joinBottomPanel}>
+          {selectedJoin ? (
+            <>
+              <div style={styles.joinBottomPanelHeader}>
+                <span style={styles.joinSidePanelTitle}>Join conditions</span>
+                <span style={styles.joinInspectorPath}>{selectedJoin.left}</span>
+                <span style={styles.joinInspectorOperator}>=</span>
+                <span style={styles.joinInspectorPath}>{selectedJoin.right}</span>
+                <div style={{ flex: 1 }} />
+                <button type="button" style={styles.joinModalActionButton} onClick={addAdditionalCondition}>
+                  Add condition
+                </button>
+                <button type="button" style={styles.joinDeleteButton} onClick={deleteSelectedJoin}>
+                  Remove join
+                </button>
+              </div>
+              {(selectedJoin.additionalJoinConditions ?? []).length > 0 && (
+                <div style={styles.joinBottomConditionsList}>
+                  {(selectedJoin.additionalJoinConditions ?? []).map((condition, conditionIndex) => (
+                    <div key={conditionIndex} style={styles.joinConditionCard}>
+                      <SchemaCell
+                        value={condition.left}
+                        options={columnPathOptions}
+                        disabled={columnPathOptions.length === 0}
+                        variant="outlined"
+                        onChange={value => updateAdditionalCondition(conditionIndex, { left: value })}
+                      />
+                      <SchemaCell
+                        value={condition.operator}
+                        options={JOIN_OPERATOR_OPTIONS}
+                        disabled={false}
+                        variant="outlined"
+                        onChange={value => updateAdditionalCondition(conditionIndex, { operator: value as JoinConditionPairDto['operator'] })}
+                      />
+                      <SchemaCell
+                        value={condition.right ?? ''}
+                        options={columnPathOptions}
+                        disabled={columnPathOptions.length === 0}
+                        variant="outlined"
+                        onChange={value => updateAdditionalCondition(conditionIndex, {
+                          right: value,
+                          rightLiteral: undefined,
+                          rightValues: undefined,
+                        })}
+                      />
+                      <button type="button" style={styles.joinConditionRemoveButton} onClick={() => removeAdditionalCondition(conditionIndex)}>
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
             <span style={styles.joinModalNote}>
-              {selectedJoin
-                ? 'Use the side panel to edit additional conditions for the selected join.'
-                : 'Click one column, then a column from another table to create a join.'}
+              Click a column, then a column in another table to create a join.
             </span>
-          </div>
+          )}
+        </div>
+
+        {/* Row 5 — footer */}
+        <div style={styles.joinModalFooter}>
           <button type="button" style={styles.joinModalActionButton} onClick={onClose}>
             Close
           </button>
         </div>
+
       </div>
     </div>
   );
@@ -1127,8 +1448,6 @@ function MappingGrid({
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [selectedColumnTypes, setSelectedColumnTypes] = useState<string[]>([]);
   const [selectedPrimaryKeys, setSelectedPrimaryKeys] = useState<boolean[]>([]);
-  const [joinSelectionMode, setJoinSelectionMode] = useState(false);
-  const [selectedJoinRowIndexes, setSelectedJoinRowIndexes] = useState<Set<number>>(() => new Set());
   const [joinModalOpen, setJoinModalOpen] = useState(false);
 
   useEffect(() => {
@@ -1219,38 +1538,10 @@ function MappingGrid({
     });
   };
 
-  const selectedJoinTables = Array.from(selectedJoinRowIndexes)
-    .map(index => {
-      const schemaName = selectedSchemas[index] ?? '';
-      const tableName = selectedTables[index] ?? '';
-      return schemaName && tableName ? createTableKey(schemaName, tableName) : '';
-    })
-    .filter(Boolean)
-    .filter((tableKey, index, tableKeys) => tableKeys.indexOf(tableKey) === index)
-    .map(parseTableKey)
-    .filter((table): table is SelectedJoinTable => table !== null);
-  const selectedJoinTablesSignature = selectedJoinTables.map(table => table.key).join('|');
-
-  const toggleJoinRowSelection = (rowIndex: number) => {
-    setSelectedJoinRowIndexes(prev => {
-      const next = new Set(prev);
-
-      if (next.has(rowIndex)) {
-        next.delete(rowIndex);
-      } else {
-        next.add(rowIndex);
-      }
-
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    if (!joinSelectionMode) {
-      setSelectedJoinRowIndexes(new Set());
-      setJoinModalOpen(false);
-    }
-  }, [joinSelectionMode]);
+  const scopes = useMemo(
+    () => getScopesFromMapping(mapping, selectedSchemas, selectedTables, serviceRows),
+    [mapping, selectedSchemas, selectedTables, serviceRows],
+  );
 
   useEffect(() => {
     setSelectedPrimaryKeys(currentPrimaryKeys => currentPrimaryKeys.map((currentPrimaryKey, index) => {
@@ -1267,18 +1558,6 @@ function MappingGrid({
       return columnInfo?.primaryKey ?? currentPrimaryKey;
     }));
   }, [columnsByTable, selectedColumns, selectedSchemas, selectedTables]);
-
-  useEffect(() => {
-    if (!joinModalOpen) {
-      return;
-    }
-
-    selectedJoinTables.forEach(table => {
-      if ((columnsStatusByTable[table.key] ?? 'idle') === 'idle') {
-        onLoadColumns(endpointId, table.schemaName, table.tableName);
-      }
-    });
-  }, [columnsStatusByTable, endpointId, joinModalOpen, onLoadColumns, selectedJoinTablesSignature]);
 
   return (
     <>
@@ -1309,31 +1588,12 @@ function MappingGrid({
         <div style={styles.gridSectionHeader}>
           <span>Database</span>
           <div style={styles.gridHeaderActions}>
-            {joinSelectionMode && (
-              <span style={styles.joinSelectionCount}>{selectedJoinTables.length} table{selectedJoinTables.length === 1 ? '' : 's'}</span>
-            )}
-            {joinSelectionMode && (
-              <button
-                type="button"
-                style={{
-                  ...styles.gridHeaderActionButton,
-                  ...(selectedJoinTables.length < 2 ? styles.gridHeaderActionButtonDisabled : null),
-                }}
-                disabled={selectedJoinTables.length < 2}
-                onClick={() => setJoinModalOpen(true)}
-              >
-                Define join
-              </button>
-            )}
             <button
               type="button"
-              style={{
-                ...styles.gridHeaderActionButton,
-                ...(joinSelectionMode ? styles.gridHeaderActionButtonActive : null),
-              }}
-              onClick={() => setJoinSelectionMode(mode => !mode)}
+              style={styles.gridHeaderActionButton}
+              onClick={() => setJoinModalOpen(true)}
             >
-              Join mode
+              Joins
             </button>
           </div>
         </div>
@@ -1422,58 +1682,40 @@ function MappingGrid({
                 />
               </span>
               <span style={styles.schemaGridCell}>
-                {joinSelectionMode ? (
-                  <SelectableTableCell
-                    value={selectedTable}
-                    selected={selectedJoinRowIndexes.has(index)}
-                    disabled={!selectedSchema || !selectedTable}
-                    onToggle={() => toggleJoinRowSelection(index)}
-                  />
-                ) : (
-                  <SchemaCell
-                    value={selectedTables[index] ?? ''}
-                    options={tableOptions}
-                    disabled={!selectedSchema}
-                    onOpenDropdown={() => {
-                      if (selectedSchema && tablesStatus === 'idle') {
-                        onLoadTables(endpointId, selectedSchema);
-                      }
-                    }}
-                    onChange={value => {
-                      const nextTables = [...selectedTables];
-                      const previousTable = nextTables[index] ?? '';
-                      nextTables[index] = value;
+                <SchemaCell
+                  value={selectedTables[index] ?? ''}
+                  options={tableOptions}
+                  disabled={!selectedSchema}
+                  onOpenDropdown={() => {
+                    if (selectedSchema && tablesStatus === 'idle') {
+                      onLoadTables(endpointId, selectedSchema);
+                    }
+                  }}
+                  onChange={value => {
+                    const nextTables = [...selectedTables];
+                    const previousTable = nextTables[index] ?? '';
+                    nextTables[index] = value;
 
-                      const nextColumns = [...selectedColumns];
-                      const nextColumnTypes = [...selectedColumnTypes];
-                      const nextPrimaryKeys = [...selectedPrimaryKeys];
-                      if (previousTable !== value) {
-                        nextColumns[index] = '';
-                        nextColumnTypes[index] = '';
-                        nextPrimaryKeys[index] = false;
-                      }
+                    const nextColumns = [...selectedColumns];
+                    const nextColumnTypes = [...selectedColumnTypes];
+                    const nextPrimaryKeys = [...selectedPrimaryKeys];
+                    if (previousTable !== value) {
+                      nextColumns[index] = '';
+                      nextColumnTypes[index] = '';
+                      nextPrimaryKeys[index] = false;
+                    }
 
-                      setSelectedTables(nextTables);
-                      setSelectedColumns(nextColumns);
-                      setSelectedColumnTypes(nextColumnTypes);
-                      setSelectedPrimaryKeys(nextPrimaryKeys);
-                      setSelectedJoinRowIndexes(prev => {
-                        if (!prev.has(index) || previousTable === value) {
-                          return prev;
-                        }
+                    setSelectedTables(nextTables);
+                    setSelectedColumns(nextColumns);
+                    setSelectedColumnTypes(nextColumnTypes);
+                    setSelectedPrimaryKeys(nextPrimaryKeys);
+                    emitMappingChange(selectedSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
 
-                        const next = new Set(prev);
-                        next.delete(index);
-                        return next;
-                      });
-                      emitMappingChange(selectedSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
-
-                      if (selectedSchema && value && (columnsStatusByTable[createTableKey(selectedSchema, value)] ?? 'idle') === 'idle') {
-                        onLoadColumns(endpointId, selectedSchema, value);
-                      }
-                    }}
-                  />
-                )}
+                    if (selectedSchema && value && (columnsStatusByTable[createTableKey(selectedSchema, value)] ?? 'idle') === 'idle') {
+                      onLoadColumns(endpointId, selectedSchema, value);
+                    }
+                  }}
+                />
               </span>
               <span style={styles.schemaGridCell}>
                 <SchemaCell
@@ -1521,11 +1763,19 @@ function MappingGrid({
         )}
       </div>
     </div>
-    <JoinTablesModal
+    <JoinDefinitionModal
       open={joinModalOpen}
-      tables={selectedJoinTables}
+      scopes={scopes}
+      schemasStatus={schemasStatus}
+      schemas={schemas}
       columnsByTable={columnsByTable}
+      columnsStatusByTable={columnsStatusByTable}
+      tablesBySchema={tablesBySchema}
+      tablesStatusBySchema={tablesStatusBySchema}
       joins={mapping?.joins ?? []}
+      endpointId={endpointId}
+      onLoadTables={onLoadTables}
+      onLoadColumns={onLoadColumns}
       onChangeJoins={emitJoinsChange}
       onClose={() => setJoinModalOpen(false)}
     />
@@ -1948,12 +2198,6 @@ const styles: Record<string, CSSProperties> = {
     textTransform: 'none',
     letterSpacing: 0,
   },
-  joinSelectionCount: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 11,
-    fontWeight: 500,
-    whiteSpace: 'nowrap',
-  },
   gridHeaderActionButton: {
     minHeight: 24,
     border: '1px solid rgba(255,255,255,0.12)',
@@ -1964,11 +2208,6 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     cursor: 'pointer',
-  },
-  gridHeaderActionButtonActive: {
-    borderColor: 'rgba(73,204,144,0.55)',
-    background: 'rgba(73,204,144,0.14)',
-    color: '#b7eb8f',
   },
   gridHeaderActionButtonDisabled: {
     opacity: 0.45,
@@ -2062,32 +2301,6 @@ const styles: Record<string, CSSProperties> = {
     padding: 0,
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
-  },
-  joinSelectableCell: {
-    width: '100%',
-    minWidth: 0,
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    border: 'none',
-    outline: 'none',
-    background: 'transparent',
-    color: 'rgba(255,255,255,0.74)',
-    padding: '0 12px',
-    textAlign: 'left',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    lineHeight: '18px',
-  },
-  joinSelectableCellSelected: {
-    background: 'rgba(73,204,144,0.18)',
-    boxShadow: 'inset 0 0 0 1px rgba(73,204,144,0.55)',
-    color: 'rgba(255,255,255,0.92)',
-  },
-  joinSelectableCellDisabled: {
-    color: 'rgba(255,255,255,0.24)',
-    cursor: 'not-allowed',
   },
   schemaCellButton: {
     width: '100%',
@@ -2264,23 +2477,65 @@ const styles: Record<string, CSSProperties> = {
   },
   joinModalHeader: {
     display: 'flex',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 16,
-  },
-  joinModalTitleGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
   },
   joinModalTitle: {
     color: 'rgba(255,255,255,0.86)',
     fontSize: 16,
     fontWeight: 700,
+    flexShrink: 0,
   },
-  joinModalSubtitle: {
+  joinScopeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flex: '1 1 auto',
+    minWidth: 0,
+  },
+  joinScopeLabel: {
     color: 'rgba(255,255,255,0.42)',
     fontSize: 12,
+    fontWeight: 600,
+    flexShrink: 0,
+  },
+  scopeSelectShell: {
+    position: 'relative',
+    flex: '1 1 auto',
+    minWidth: 0,
+    maxWidth: 340,
+  },
+  scopeSelectTrigger: {
+    width: '100%',
+    height: 30,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 4,
+    background: 'rgba(255,255,255,0.05)',
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    padding: '0 8px',
+    cursor: 'pointer',
+    outline: 'none',
+    textAlign: 'left',
+  },
+  scopeSelectDropdown: {
+    position: 'absolute',
+    zIndex: 30,
+    top: 'calc(100% + 4px)',
+    left: 0,
+    right: 0,
+    maxHeight: 200,
+    overflowY: 'auto',
+    padding: 4,
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 6,
+    background: '#1f1f1f',
+    boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
   },
   joinModalCloseButton: {
     width: 28,
@@ -2294,24 +2549,9 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.55)',
     cursor: 'pointer',
   },
-  joinSelectedTables: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  joinTablePill: {
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 4,
-    background: 'rgba(255,255,255,0.04)',
-    color: 'rgba(255,255,255,0.74)',
-    padding: '5px 8px',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    lineHeight: '18px',
-  },
   joinDiagram: {
     position: 'relative',
-    height: '100%',
+    flex: '1 1 auto',
     minHeight: 0,
     minWidth: 0,
     border: '1px solid rgba(255,255,255,0.08)',
@@ -2319,13 +2559,11 @@ const styles: Record<string, CSSProperties> = {
     overflow: 'hidden',
     background: '#181818',
   },
-  joinModalBody: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) clamp(420px, 36vw, 560px)',
-    gap: 16,
+  joinAddTableRow: {
+    display: 'flex',
     alignItems: 'stretch',
-    flex: '1 1 auto',
-    minHeight: 0,
+    gap: 8,
+    minHeight: 32,
   },
   joinDiagramSvg: {
     position: 'absolute',
@@ -2373,14 +2611,40 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: '0 10px 24px rgba(0,0,0,0.25)',
   },
   joinDiagramTableHeader: {
-    padding: '9px 12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    padding: '7px 8px 7px 12px',
     borderBottom: '1px solid rgba(255,255,255,0.1)',
     background: 'rgba(64,150,255,0.16)',
+  },
+  joinDiagramTableName: {
+    flex: '1 1 auto',
+    minWidth: 0,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
     color: 'rgba(255,255,255,0.86)',
     fontSize: 12,
     fontWeight: 700,
     fontFamily: 'monospace',
     lineHeight: '18px',
+  },
+  joinDiagramTableRemove: {
+    flexShrink: 0,
+    width: 20,
+    height: 20,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    borderRadius: 3,
+    background: 'transparent',
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    cursor: 'pointer',
+    padding: 0,
   },
   joinDiagramColumnList: {
     display: 'flex',
@@ -2409,6 +2673,30 @@ const styles: Record<string, CSSProperties> = {
   joinDiagramColumnPending: {
     background: 'rgba(73,204,144,0.16)',
     color: 'rgba(255,255,255,0.92)',
+  },
+  joinDiagramColumnHovered: {
+    background: 'rgba(255,255,255,0.06)',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  joinDiagramColumnTarget: {
+    background: 'rgba(97,170,254,0.16)',
+    color: 'rgba(255,255,255,0.92)',
+    boxShadow: 'inset 0 0 0 1px rgba(97,170,254,0.4)',
+  },
+  joinDiagramColumnSelectedMember: {
+    background: 'rgba(73,204,144,0.1)',
+    color: 'rgba(255,255,255,0.88)',
+    boxShadow: 'inset 0 0 0 1px rgba(73,204,144,0.35)',
+  },
+  joinDiagramEmpty: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 12,
+    padding: 24,
+    textAlign: 'center',
   },
   joinDiagramHandle: {
     width: 9,
@@ -2441,63 +2729,40 @@ const styles: Record<string, CSSProperties> = {
   },
   joinModalFooter: {
     display: 'flex',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 16,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
-  joinSidePanel: {
-    minWidth: 0,
-    minHeight: 0,
+  joinBottomPanel: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
-    overflow: 'auto',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 6,
-    background: 'rgba(255,255,255,0.025)',
-    padding: 12,
+    gap: 8,
+    borderTop: '1px solid rgba(255,255,255,0.08)',
+    paddingTop: 10,
   },
-  joinSidePanelHeader: {
+  joinBottomPanelHeader: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
+    flexWrap: 'wrap',
   },
   joinSidePanelTitle: {
     color: 'rgba(255,255,255,0.82)',
     fontSize: 13,
     fontWeight: 700,
+    flexShrink: 0,
   },
-  joinSidePanelEmpty: {
-    display: 'flex',
-    minHeight: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'rgba(255,255,255,0.42)',
-    fontSize: 12,
-    lineHeight: '18px',
-    textAlign: 'center',
-  },
-  joinMainCondition: {
+  joinBottomConditionsList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 6,
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 6,
-    background: 'rgba(255,255,255,0.03)',
-    padding: 10,
+    gap: 8,
+    maxHeight: 160,
+    overflowY: 'auto',
   },
   joinConditionLabel: {
     color: 'rgba(255,255,255,0.42)',
     fontSize: 11,
     fontWeight: 700,
     textTransform: 'uppercase',
-  },
-  joinAdditionalHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
   },
   joinConditionList: {
     display: 'flex',

@@ -8,6 +8,13 @@ export interface DatabaseResponse {
   databaseName: string;
 }
 
+export interface ForeignKeyReferenceDto {
+  constraintName?: string;
+  referencedSchema?: string;
+  referencedTable?: string;
+  referencedColumn?: string;
+}
+
 export interface DbColumnResponse {
   name: string;
   dataType?: string;
@@ -15,6 +22,7 @@ export interface DbColumnResponse {
   ordinalPosition?: number;
   columnDefault?: string;
   primaryKey?: boolean;
+  foreignKeys?: ForeignKeyReferenceDto[];
 }
 
 export async function getServiceDatabase(serviceId: number): Promise<DatabaseResponse | null> {
