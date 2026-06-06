@@ -2131,7 +2131,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 10,
   },
   schemaEditorArrowButton: {
-    width: 20,
+    width: 18,
     height: '100%',
     display: 'flex',
     alignItems: 'center',
