@@ -239,6 +239,11 @@ function buildEdgePath(left: JoinEdgePoint, right: JoinEdgePoint): string {
   ].join(' ');
 }
 
+function getJoinColor(joinIndex: number): string {
+  const hue = Math.round((joinIndex * 137.508) % 360);
+  return `hsl(${hue}, 68%, 60%)`;
+}
+
 function SchemaCell({
   value,
   disabled,
@@ -854,6 +859,14 @@ function JoinDefinitionModal({
     .filter((line): line is JoinEdgeLine => line !== null);
 
   const selectedJoin = selectedJoinIndex !== null ? joins[selectedJoinIndex] : null;
+
+  const columnJoinColors = new Map<string, string>();
+  visibleJoins.forEach(({ join, index }) => {
+    const color = getJoinColor(index);
+    if (join.left) columnJoinColors.set(join.left, color);
+    if (join.right) columnJoinColors.set(join.right, color);
+  });
+
   const columnPathOptions = allTables.flatMap(table => (columnsByTable[table.key] ?? []).map(column => {
     const columnPath = createColumnPath(table.schemaName, table.tableName, column.name);
     return { label: columnPath, value: columnPath };
@@ -1137,7 +1150,16 @@ function JoinDefinitionModal({
                             onMouseEnter={() => setHoveredColumnPath(columnPath)}
                             onMouseLeave={() => setHoveredColumnPath(null)}
                           >
-                            <span style={styles.joinDiagramHandle} />
+                            <span
+                            style={{
+                              ...styles.joinDiagramHandle,
+                              ...(columnJoinColors.has(columnPath) ? {
+                                background: columnJoinColors.get(columnPath),
+                                borderColor: columnJoinColors.get(columnPath),
+                                boxShadow: `0 0 5px ${columnJoinColors.get(columnPath)}80`,
+                              } : null),
+                            }}
+                          />
                             <span style={styles.joinDiagramColumnName}>
                               <span>{column.name}</span>
                               {column.primaryKey && <KeyOutlined style={styles.primaryKeyIcon} />}
