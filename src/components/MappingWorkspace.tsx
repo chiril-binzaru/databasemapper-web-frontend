@@ -1344,6 +1344,19 @@ function MappingGrid({
           <span style={styles.gridHeaderCell}>Type</span>
         </div>
         {Array.from({ length: databaseRowCount }).map((_, index) => {
+          const serviceRow = serviceRows[index];
+
+          if (!serviceRow) {
+            return (
+              <div key={`database-${index}`} style={styles.databaseGridRow}>
+                <span style={styles.gridCellText} />
+                <span style={styles.gridCellText} />
+                <span style={styles.gridCellText} />
+                <span style={styles.gridCellTextMuted} />
+              </div>
+            );
+          }
+
           const selectedSchema = selectedSchemas[index] ?? '';
           const selectedTable = selectedTables[index] ?? '';
           const selectedColumn = selectedColumns[index] ?? '';
