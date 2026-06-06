@@ -3,7 +3,7 @@ import apiClient from './apiClient';
 export interface EndpointItem {
   endpointId: number;
   httpMethod: string;
-  endpointPath: string;
+  path: string;
 }
 
 export interface EndpointMappingTab {
