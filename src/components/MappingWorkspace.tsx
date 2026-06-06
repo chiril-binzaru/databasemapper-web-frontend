@@ -80,6 +80,8 @@ interface JoinEdgePoint {
   key: string;
   x: number;
   y: number;
+  leftX: number;
+  rightX: number;
 }
 
 interface JoinEdgeLine {
@@ -194,6 +196,47 @@ function getScopesFromMapping(
   });
 
   return scopes;
+}
+
+const TABLE_CARD_WIDTH = 230;
+const EDGE_CORNER_RADIUS = 10;
+
+function buildEdgePath(left: JoinEdgePoint, right: JoinEdgePoint): string {
+  const sy = left.y;
+  const ty = right.y;
+
+  // Pick exit/entry sides based on which table is further left
+  const goingRight = left.leftX < right.leftX;
+  const sx = goingRight ? left.rightX : left.leftX;
+  const tx = goingRight ? right.leftX : right.rightX;
+
+  if (Math.abs(sx - tx) < 1) {
+    return `M ${sx} ${sy} V ${ty}`;
+  }
+  if (Math.abs(sy - ty) < 1) {
+    return `M ${sx} ${sy} H ${tx}`;
+  }
+
+  const midX = (sx + tx) / 2;
+  const dy = ty - sy;
+  const dir = dy > 0 ? 1 : -1;
+  const r = Math.min(
+    EDGE_CORNER_RADIUS,
+    Math.abs(midX - sx) / 2,
+    Math.abs(tx - midX) / 2,
+    Math.abs(dy) / 2,
+  );
+  const c1x = goingRight ? midX - r : midX + r;
+  const c2x = goingRight ? midX + r : midX - r;
+
+  return [
+    `M ${sx} ${sy}`,
+    `H ${c1x}`,
+    `Q ${midX} ${sy} ${midX} ${sy + dir * r}`,
+    `V ${ty - dir * r}`,
+    `Q ${midX} ${ty} ${c2x} ${ty}`,
+    `H ${tx}`,
+  ].join(' ');
 }
 
 function SchemaCell({
@@ -552,6 +595,13 @@ function JoinDefinitionModal({
   const columnButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const deleteSelectedJoinRef = useRef<() => void>(() => {});
   const joinsRef = useRef(joins);
+  const draggingStateRef = useRef<{
+    tableKey: string;
+    startMouseX: number;
+    startMouseY: number;
+    startTableX: number;
+    startTableY: number;
+  } | null>(null);
   joinsRef.current = joins;
   const [edgePoints, setEdgePoints] = useState<Record<string, JoinEdgePoint>>({});
   const [pendingColumnPath, setPendingColumnPath] = useState<string | null>(null);
@@ -559,6 +609,7 @@ function JoinDefinitionModal({
   const [selectedJoinIndex, setSelectedJoinIndex] = useState<number | null>(null);
   const [selectedScopeIndex, setSelectedScopeIndex] = useState(0);
   const [extraTables, setExtraTables] = useState<SelectedJoinTable[]>([]);
+  const [tablePositions, setTablePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [addTableSchema, setAddTableSchema] = useState('');
   const [addTableTable, setAddTableTable] = useState('');
 
@@ -600,6 +651,8 @@ function JoinDefinitionModal({
         key: columnPath,
         x: rect.left - diagramRect.left + rect.width / 2,
         y: rect.top - diagramRect.top + rect.height / 2,
+        leftX: rect.left - diagramRect.left,
+        rightX: rect.right - diagramRect.left,
       };
     });
 
@@ -662,12 +715,48 @@ function JoinDefinitionModal({
     }
   }, [scopes.length, selectedScopeIndex]);
 
+  // Initialise / extend table positions when allTables changes
+  useEffect(() => {
+    setTablePositions(prev => {
+      const next: Record<string, { x: number; y: number }> = {};
+      allTables.forEach((table, index) => {
+        next[table.key] = prev[table.key] ?? { x: 24 + index * (TABLE_CARD_WIDTH + 28), y: 24 };
+      });
+      return next;
+    });
+  }, [tablesSignature]);
+
+  // Global drag move / release
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const ds = draggingStateRef.current;
+      if (!ds) {
+        return;
+      }
+      const x = Math.max(0, ds.startTableX + (e.clientX - ds.startMouseX));
+      const y = Math.max(0, ds.startTableY + (e.clientY - ds.startMouseY));
+      setTablePositions(prev => ({ ...prev, [ds.tableKey]: { x, y } }));
+    };
+    const handleMouseUp = () => {
+      if (draggingStateRef.current) {
+        draggingStateRef.current = null;
+        document.body.style.cursor = '';
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (!open) {
       return;
     }
     updateEdgePoints();
-  }, [columnsByTable, joins, open, tablesSignature]);
+  }, [columnsByTable, joins, open, tablesSignature, tablePositions]);
 
   useEffect(() => {
     if (!open) {
@@ -770,43 +859,28 @@ function JoinDefinitionModal({
     return { label: columnPath, value: columnPath };
   }));
 
+  const handleTableDragStart = (e: ReactMouseEvent<HTMLDivElement>, tableKey: string) => {
+    if (e.target instanceof Element && (e.target as Element).closest('button')) {
+      return;
+    }
+    e.preventDefault();
+    const pos = tablePositions[tableKey] ?? { x: 0, y: 0 };
+    draggingStateRef.current = {
+      tableKey,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startTableX: pos.x,
+      startTableY: pos.y,
+    };
+    document.body.style.cursor = 'grabbing';
+  };
+
   const selectEdgeFromDiagramClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    const target = event.target;
-
-    if (target instanceof Element && target.closest('[data-join-table="true"]')) {
+    const target = event.target as Element;
+    if (target.closest('[data-join-table="true"]') || target.tagName === 'path') {
       return;
     }
-
-    const diagram = diagramRef.current;
-    if (!diagram) {
-      return;
-    }
-
-    const rect = diagram.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-    const hitLine = edgeLines.find(line => {
-      const dx = line.rightPoint.x - line.leftPoint.x;
-      const dy = line.rightPoint.y - line.leftPoint.y;
-      const lengthSquared = dx * dx + dy * dy;
-
-      if (lengthSquared === 0) {
-        return false;
-      }
-
-      const positionOnLine = Math.max(0, Math.min(1, (
-        ((clickX - line.leftPoint.x) * dx) + ((clickY - line.leftPoint.y) * dy)
-      ) / lengthSquared));
-      const closestX = line.leftPoint.x + positionOnLine * dx;
-      const closestY = line.leftPoint.y + positionOnLine * dy;
-      const distance = Math.hypot(clickX - closestX, clickY - closestY);
-
-      return distance <= 8;
-    });
-
-    if (hitLine) {
-      setSelectedJoinIndex(hitLine.joinIndex);
-    }
+    setSelectedJoinIndex(null);
   };
 
   const handleColumnClick = (columnPath: string) => {
@@ -975,94 +1049,108 @@ function JoinDefinitionModal({
         </div>
 
         {/* Row 3 — diagram canvas, fills remaining height */}
-        <div ref={diagramRef} style={styles.joinDiagram} onClick={selectEdgeFromDiagramClick}>
-          <svg style={styles.joinDiagramSvg}>
-            {edgeLines.map(line => {
-              const selected = line.joinIndex === selectedJoinIndex;
-              return (
-                <g key={`${line.join.left}-${line.join.right}`}>
-                  <line
-                    x1={line.leftPoint.x}
-                    y1={line.leftPoint.y}
-                    x2={line.rightPoint.x}
-                    y2={line.rightPoint.y}
-                    style={styles.joinEdgeHitArea}
-                    onClick={() => setSelectedJoinIndex(line.joinIndex)}
-                  />
-                  <line
-                    x1={line.leftPoint.x}
-                    y1={line.leftPoint.y}
-                    x2={line.rightPoint.x}
-                    y2={line.rightPoint.y}
-                    style={selected ? styles.joinEdgeSelected : styles.joinEdge}
-                  />
-                </g>
-              );
-            })}
-          </svg>
+        <div style={styles.joinDiagram}>
           <div style={styles.joinTableCanvas} onScroll={updateEdgePoints}>
-            {allTables.map(table => {
-              const columns = columnsByTable[table.key] ?? [];
-              const colStatus = columnsStatusByTable[table.key] ?? 'idle';
-              const isExtra = !scopeTableKeys.has(table.key);
-              return (
-                <div key={table.key} data-join-table="true" style={styles.joinDiagramTable}>
-                  <div style={styles.joinDiagramTableHeader}>
-                    <span style={styles.joinDiagramTableName}>{table.schemaName}.{table.tableName}</span>
-                    {isExtra && (
-                      <button
-                        type="button"
-                        style={styles.joinDiagramTableRemove}
-                        title="Remove table"
-                        onClick={() => removeExtraTable(table.key)}
-                      >
-                        <CloseOutlined />
-                      </button>
-                    )}
-                  </div>
-                  <div style={styles.joinDiagramColumnList}>
-                    {colStatus === 'error' ? (
-                      <span style={styles.joinDiagramEmptyColumns}>Failed to load columns.</span>
-                    ) : columns.length === 0 ? (
-                      <span style={styles.joinDiagramEmptyColumns}>Loading columns...</span>
-                    ) : columns.map(column => {
-                      const columnPath = createColumnPath(table.schemaName, table.tableName, column.name);
-                      const isPending = pendingColumnPath === columnPath;
-                      const isHovered = hoveredColumnPath === columnPath && !isPending;
-                      const isTarget = pendingColumnPath !== null
-                        && hoveredColumnPath === columnPath
-                        && getTableKeyFromColumnPath(pendingColumnPath) !== getTableKeyFromColumnPath(columnPath);
-                      const isSelectedMember = selectedJoin !== null
-                        && (selectedJoin.left === columnPath || selectedJoin.right === columnPath);
-                      return (
+            <div
+              ref={diagramRef}
+              style={{
+                ...styles.joinTableCanvasContent,
+                width: Math.max(800, ...allTables.map(t => (tablePositions[t.key]?.x ?? 0) + TABLE_CARD_WIDTH + 60)),
+                height: Math.max(500, ...allTables.map(t => (tablePositions[t.key]?.y ?? 0) + 400)),
+              }}
+              onClick={selectEdgeFromDiagramClick}
+            >
+              <svg style={styles.joinDiagramSvg}>
+                {edgeLines.map(line => {
+                  const selected = line.joinIndex === selectedJoinIndex;
+                  const d = buildEdgePath(line.leftPoint, line.rightPoint);
+                  return (
+                    <g key={`${line.join.left}-${line.join.right}`}>
+                      <path
+                        d={d}
+                        style={styles.joinEdgeHitArea}
+                        onClick={() => setSelectedJoinIndex(line.joinIndex)}
+                      />
+                      <path
+                        d={d}
+                        style={selected ? styles.joinEdgeSelected : styles.joinEdge}
+                      />
+                    </g>
+                  );
+                })}
+              </svg>
+
+              {allTables.map(table => {
+                const pos = tablePositions[table.key] ?? { x: 0, y: 0 };
+                const columns = columnsByTable[table.key] ?? [];
+                const colStatus = columnsStatusByTable[table.key] ?? 'idle';
+                const isExtra = !scopeTableKeys.has(table.key);
+                return (
+                  <div
+                    key={table.key}
+                    data-join-table="true"
+                    style={{ ...styles.joinDiagramTable, left: pos.x, top: pos.y }}
+                  >
+                    <div
+                      style={styles.joinDiagramTableHeader}
+                      onMouseDown={e => handleTableDragStart(e, table.key)}
+                    >
+                      <span style={styles.joinDiagramTableName}>{table.schemaName}.{table.tableName}</span>
+                      {isExtra && (
                         <button
-                          key={columnPath}
-                          ref={element => { columnButtonRefs.current[columnPath] = element; }}
                           type="button"
-                          style={{
-                            ...styles.joinDiagramColumn,
-                            ...(isPending ? styles.joinDiagramColumnPending : null),
-                            ...(isTarget ? styles.joinDiagramColumnTarget : null),
-                            ...(isHovered ? styles.joinDiagramColumnHovered : null),
-                            ...(isSelectedMember ? styles.joinDiagramColumnSelectedMember : null),
-                          }}
-                          onClick={() => handleColumnClick(columnPath)}
-                          onMouseEnter={() => setHoveredColumnPath(columnPath)}
-                          onMouseLeave={() => setHoveredColumnPath(null)}
+                          style={styles.joinDiagramTableRemove}
+                          title="Remove table"
+                          onClick={() => removeExtraTable(table.key)}
                         >
-                          <span style={styles.joinDiagramHandle} />
-                          <span style={styles.joinDiagramColumnName}>
-                            <span>{column.name}</span>
-                            {column.primaryKey && <KeyOutlined style={styles.primaryKeyIcon} />}
-                          </span>
-                          <span style={styles.joinDiagramColumnType}>{column.dataType ?? ''}</span>
+                          <CloseOutlined />
                         </button>
-                      );
-                    })}
+                      )}
+                    </div>
+                    <div style={styles.joinDiagramColumnList}>
+                      {colStatus === 'error' ? (
+                        <span style={styles.joinDiagramEmptyColumns}>Failed to load columns.</span>
+                      ) : columns.length === 0 ? (
+                        <span style={styles.joinDiagramEmptyColumns}>Loading columns...</span>
+                      ) : columns.map(column => {
+                        const columnPath = createColumnPath(table.schemaName, table.tableName, column.name);
+                        const isPending = pendingColumnPath === columnPath;
+                        const isHovered = hoveredColumnPath === columnPath && !isPending;
+                        const isTarget = pendingColumnPath !== null
+                          && hoveredColumnPath === columnPath
+                          && getTableKeyFromColumnPath(pendingColumnPath) !== getTableKeyFromColumnPath(columnPath);
+                        const isSelectedMember = selectedJoin !== null
+                          && (selectedJoin.left === columnPath || selectedJoin.right === columnPath);
+                        return (
+                          <button
+                            key={columnPath}
+                            ref={element => { columnButtonRefs.current[columnPath] = element; }}
+                            type="button"
+                            style={{
+                              ...styles.joinDiagramColumn,
+                              ...(isPending ? styles.joinDiagramColumnPending : null),
+                              ...(isTarget ? styles.joinDiagramColumnTarget : null),
+                              ...(isHovered ? styles.joinDiagramColumnHovered : null),
+                              ...(isSelectedMember ? styles.joinDiagramColumnSelectedMember : null),
+                            }}
+                            onClick={() => handleColumnClick(columnPath)}
+                            onMouseEnter={() => setHoveredColumnPath(columnPath)}
+                            onMouseLeave={() => setHoveredColumnPath(null)}
+                          >
+                            <span style={styles.joinDiagramHandle} />
+                            <span style={styles.joinDiagramColumnName}>
+                              <span>{column.name}</span>
+                              {column.primaryKey && <KeyOutlined style={styles.primaryKeyIcon} />}
+                            </span>
+                            <span style={styles.joinDiagramColumnType}>{column.dataType ?? ''}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -2570,40 +2658,42 @@ const styles: Record<string, CSSProperties> = {
     inset: 0,
     width: '100%',
     height: '100%',
-    pointerEvents: 'auto',
+    pointerEvents: 'none',
     zIndex: 1,
+    overflow: 'visible',
   },
   joinEdgeHitArea: {
+    fill: 'none',
     stroke: 'transparent',
     strokeWidth: 14,
     cursor: 'pointer',
     pointerEvents: 'stroke',
   },
   joinEdge: {
+    fill: 'none',
     stroke: 'rgba(105,177,255,0.72)',
     strokeWidth: 2,
+    strokeLinejoin: 'round',
     pointerEvents: 'none',
   },
   joinEdgeSelected: {
+    fill: 'none',
     stroke: '#49cc90',
-    strokeWidth: 3,
+    strokeWidth: 2.5,
+    strokeLinejoin: 'round',
     pointerEvents: 'none',
   },
   joinTableCanvas: {
-    position: 'relative',
-    zIndex: 2,
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 28,
     height: '100%',
     minHeight: 0,
     overflow: 'auto',
-    padding: 24,
-    pointerEvents: 'auto',
+  },
+  joinTableCanvasContent: {
+    position: 'relative',
   },
   joinDiagramTable: {
-    width: 230,
-    flexShrink: 0,
+    position: 'absolute',
+    width: TABLE_CARD_WIDTH,
     overflow: 'hidden',
     border: '1px solid rgba(255,255,255,0.12)',
     borderRadius: 7,
@@ -2618,6 +2708,8 @@ const styles: Record<string, CSSProperties> = {
     padding: '7px 8px 7px 12px',
     borderBottom: '1px solid rgba(255,255,255,0.1)',
     background: 'rgba(64,150,255,0.16)',
+    cursor: 'grab',
+    userSelect: 'none',
   },
   joinDiagramTableName: {
     flex: '1 1 auto',
