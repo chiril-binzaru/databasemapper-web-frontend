@@ -669,12 +669,12 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                             serviceId: service.serviceId,
                             serviceName: service.serviceName,
                             httpMethod: ep.httpMethod,
-                            endpointPath: ep.endpointPath,
+                            endpointPath: ep.path,
                           });
                         }}
                       >
                         <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[ep.httpMethod] ?? 'rgba(255,255,255,0.5)' }}>{ep.httpMethod}</span>
-                        <span style={styles.endpointPath}>{ep.endpointPath}</span>
+                        <span style={styles.endpointPath}>{ep.path}</span>
                       </button>
                     ))
                   )}
