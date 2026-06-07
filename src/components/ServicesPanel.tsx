@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { App, Button, Typography, Dropdown, Tooltip } from 'antd';
 import {
   AppstoreOutlined,
@@ -45,6 +45,9 @@ interface ServicesPanelProps {
 }
 
 export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
+  const endpointsPrefetchRef = useRef<Record<number, Promise<void> | undefined>>({});
+  const databasePrefetchRef = useRef<Record<number, Promise<DatabaseResponse | null | undefined> | undefined>>({});
+  const connectionsPrefetchRef = useRef<Record<number, Promise<void> | undefined>>({});
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
   const [dbExpanded, setDbExpanded] = useState(false);
   const [connectionsExpanded, setConnectionsExpanded] = useState(false);
@@ -93,6 +96,118 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
       deleteDatabaseConnection(databaseId, connectionId),
   });
 
+  const prefetchEndpoints = async (serviceId: number) => {
+    const inFlightRequest = endpointsPrefetchRef.current[serviceId];
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    if (endpointsByService[serviceId] !== undefined || endpointsLoadingByService[serviceId]) {
+      return;
+    }
+
+    const request = (async () => {
+      setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: true }));
+      setEndpointsErrorByService(prev => ({ ...prev, [serviceId]: null }));
+
+      try {
+        const response = await getServiceEndpoints(serviceId);
+        setEndpointsByService(prev => ({ ...prev, [serviceId]: response.endpoints }));
+      } catch {
+        setEndpointsErrorByService(prev => ({
+          ...prev,
+          [serviceId]: 'Failed to load endpoints. Check that the server is running.',
+        }));
+      } finally {
+        setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: false }));
+        delete endpointsPrefetchRef.current[serviceId];
+      }
+    })();
+
+    endpointsPrefetchRef.current[serviceId] = request;
+    return request;
+  };
+
+  const prefetchDatabase = async (serviceId: number): Promise<DatabaseResponse | null | undefined> => {
+    const inFlightRequest = databasePrefetchRef.current[serviceId];
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    const databaseFetchedAt = databaseFetchedAtByService[serviceId];
+    const hasFreshDatabase =
+      databaseByService[serviceId] !== undefined &&
+      databaseFetchedAt !== undefined &&
+      Date.now() - databaseFetchedAt < SECTION_CACHE_TTL_MS;
+
+    if (hasFreshDatabase || databaseLoadingByService[serviceId]) {
+      return databaseByService[serviceId];
+    }
+
+    const request = (async () => {
+      setDatabaseLoadingByService(prev => ({ ...prev, [serviceId]: true }));
+      setDatabaseErrorByService(prev => ({ ...prev, [serviceId]: null }));
+
+      try {
+        const response = await getServiceDatabase(serviceId);
+        setDatabaseByService(prev => ({ ...prev, [serviceId]: response }));
+        setDatabaseFetchedAtByService(prev => ({ ...prev, [serviceId]: Date.now() }));
+        return response;
+      } catch {
+        setDatabaseErrorByService(prev => ({
+          ...prev,
+          [serviceId]: 'Failed to load database details. Check that the server is running.',
+        }));
+        return null;
+      } finally {
+        setDatabaseLoadingByService(prev => ({ ...prev, [serviceId]: false }));
+        delete databasePrefetchRef.current[serviceId];
+      }
+    })();
+
+    databasePrefetchRef.current[serviceId] = request;
+    return request;
+  };
+
+  const prefetchConnections = async (databaseId: number) => {
+    const inFlightRequest = connectionsPrefetchRef.current[databaseId];
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    const connectionsFetchedAt = connectionsFetchedAtByDatabase[databaseId];
+    const hasFreshConnections =
+      connectionsByDatabase[databaseId] !== undefined &&
+      connectionsFetchedAt !== undefined &&
+      Date.now() - connectionsFetchedAt < SECTION_CACHE_TTL_MS;
+
+    if (hasFreshConnections || connectionsLoadingByDatabase[databaseId]) {
+      return;
+    }
+
+    const request = (async () => {
+      setConnectionsLoadingByDatabase(prev => ({ ...prev, [databaseId]: true }));
+      setConnectionsErrorByDatabase(prev => ({ ...prev, [databaseId]: null }));
+
+      try {
+        const response = await getDatabaseConnections(databaseId);
+        setConnectionsByDatabase(prev => ({ ...prev, [databaseId]: response }));
+        setConnectionsFetchedAtByDatabase(prev => ({ ...prev, [databaseId]: Date.now() }));
+      } catch {
+        setConnectionsErrorByDatabase(prev => ({
+          ...prev,
+          [databaseId]: 'Failed to load connections. Check that the server is running.',
+        }));
+      } finally {
+        setConnectionsLoadingByDatabase(prev => ({ ...prev, [databaseId]: false }));
+        delete connectionsPrefetchRef.current[databaseId];
+      }
+    })();
+
+    connectionsPrefetchRef.current[databaseId] = request;
+    return request;
+  };
+
   const handleServiceClick = (serviceId: string) => {
     if (expandedServiceId === serviceId) {
       setExpandedServiceId(null);
@@ -101,6 +216,15 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
       setDbExpanded(false);
       setConnectionsExpanded(false);
       setEndpointsExpanded(false);
+
+      const numericServiceId = Number(serviceId);
+      void (async () => {
+        await prefetchEndpoints(numericServiceId);
+        const database = await prefetchDatabase(numericServiceId);
+        if (database?.databaseId) {
+          await prefetchConnections(database.databaseId);
+        }
+      })();
     }
   };
 
@@ -108,24 +232,11 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
     const willExpand = !endpointsExpanded;
     setEndpointsExpanded(willExpand);
 
-    if (!willExpand || endpointsByService[serviceId] !== undefined || endpointsLoadingByService[serviceId]) {
+    if (!willExpand) {
       return;
     }
 
-    setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: true }));
-    setEndpointsErrorByService(prev => ({ ...prev, [serviceId]: null }));
-
-    try {
-      const response = await getServiceEndpoints(serviceId);
-      setEndpointsByService(prev => ({ ...prev, [serviceId]: response.endpoints }));
-    } catch {
-      setEndpointsErrorByService(prev => ({
-        ...prev,
-        [serviceId]: 'Failed to load endpoints. Check that the server is running.',
-      }));
-    } finally {
-      setEndpointsLoadingByService(prev => ({ ...prev, [serviceId]: false }));
-    }
+    await prefetchEndpoints(serviceId);
   };
 
   const handleDatabaseClick = async (serviceId: number) => {
@@ -135,30 +246,13 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
       setConnectionsExpanded(false);
     }
 
-    const databaseFetchedAt = databaseFetchedAtByService[serviceId];
-    const hasFreshDatabase =
-      databaseByService[serviceId] !== undefined &&
-      databaseFetchedAt !== undefined &&
-      Date.now() - databaseFetchedAt < SECTION_CACHE_TTL_MS;
-
-    if (!willExpand || hasFreshDatabase || databaseLoadingByService[serviceId]) {
+    if (!willExpand) {
       return;
     }
 
-    setDatabaseLoadingByService(prev => ({ ...prev, [serviceId]: true }));
-    setDatabaseErrorByService(prev => ({ ...prev, [serviceId]: null }));
-
-    try {
-      const response = await getServiceDatabase(serviceId);
-      setDatabaseByService(prev => ({ ...prev, [serviceId]: response }));
-      setDatabaseFetchedAtByService(prev => ({ ...prev, [serviceId]: Date.now() }));
-    } catch {
-      setDatabaseErrorByService(prev => ({
-        ...prev,
-        [serviceId]: 'Failed to load database details. Check that the server is running.',
-      }));
-    } finally {
-      setDatabaseLoadingByService(prev => ({ ...prev, [serviceId]: false }));
+    const database = await prefetchDatabase(serviceId);
+    if (database?.databaseId) {
+      void prefetchConnections(database.databaseId);
     }
   };
 
@@ -166,31 +260,11 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
     const willExpand = !connectionsExpanded;
     setConnectionsExpanded(willExpand);
 
-    const connectionsFetchedAt = connectionsFetchedAtByDatabase[databaseId];
-    const hasFreshConnections =
-      connectionsByDatabase[databaseId] !== undefined &&
-      connectionsFetchedAt !== undefined &&
-      Date.now() - connectionsFetchedAt < SECTION_CACHE_TTL_MS;
-
-    if (!willExpand || hasFreshConnections || connectionsLoadingByDatabase[databaseId]) {
+    if (!willExpand) {
       return;
     }
 
-    setConnectionsLoadingByDatabase(prev => ({ ...prev, [databaseId]: true }));
-    setConnectionsErrorByDatabase(prev => ({ ...prev, [databaseId]: null }));
-
-    try {
-      const response = await getDatabaseConnections(databaseId);
-      setConnectionsByDatabase(prev => ({ ...prev, [databaseId]: response }));
-      setConnectionsFetchedAtByDatabase(prev => ({ ...prev, [databaseId]: Date.now() }));
-    } catch {
-      setConnectionsErrorByDatabase(prev => ({
-        ...prev,
-        [databaseId]: 'Failed to load connections. Check that the server is running.',
-      }));
-    } finally {
-      setConnectionsLoadingByDatabase(prev => ({ ...prev, [databaseId]: false }));
-    }
+    await prefetchConnections(databaseId);
   };
 
   const handleSyncWithSwagger = async (service: ServiceResponse) => {

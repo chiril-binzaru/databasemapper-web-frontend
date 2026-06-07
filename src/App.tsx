@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { App as AntApp, ConfigProvider, theme } from 'antd';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import AppSidebar from './components/AppSidebar';
 import AppSidePanel from './components/AppSidePanel';
 import MappingWorkspace from './components/MappingWorkspace';
@@ -15,6 +15,7 @@ import {
 import type { EndpointMappingTab, MappingDto, MappingFieldEntry } from './services/endpointsApi';
 import { getDatabaseColumns, getDatabaseSchemas, getDatabaseTables, getServiceDatabase } from './services/databaseApi';
 import type { DatabaseResponse, DbColumnResponse } from './services/databaseApi';
+import { getServices } from './services/servicesApi';
 
 interface OpenMappingTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -217,6 +218,11 @@ function AppLayout() {
   const [panelWidth, setPanelWidth] = useState(576);
   const [mappingTabs, setMappingTabs] = useState<OpenMappingTab[]>([]);
   const [activeMappingTabId, setActiveMappingTabId] = useState<number | null>(null);
+
+  useQuery({
+    queryKey: ['services'],
+    queryFn: getServices,
+  });
 
   const handleToggle = (panel: NonNullable<PanelType>) => {
     setOpenPanel(prev => (prev === panel ? null : panel));
