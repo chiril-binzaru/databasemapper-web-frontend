@@ -7,7 +7,7 @@ import type { EndpointSyncItem } from '../services/endpointsApi';
 interface SyncEndpointsModalProps {
   open: boolean;
   serviceName: string;
-  syncStatus: 'TO_ADD_ALL' | 'CONFLICT';
+  syncStatus: 'A' | 'AU' | 'AUR' | 'UR' | 'R';
   endpoints: EndpointSyncItem[];
   loading: boolean;
   onCancel: () => void;
@@ -26,15 +26,16 @@ export default function SyncEndpointsModal({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
   const endpointsToAdd = useMemo(
-    () => syncStatus === 'TO_ADD_ALL'
-      ? endpoints
-      : endpoints.filter(endpoint => endpoint.status === 'TO_ADD'),
-    [endpoints, syncStatus],
-  );
-  const endpointsToRemove = useMemo(
-    () => endpoints.filter(endpoint => endpoint.status === 'TO_REMOVE'),
+    () => endpoints.filter(endpoint => endpoint.status === 'A'),
     [endpoints],
   );
+  const endpointsToRemove = useMemo(
+    () => endpoints.filter(endpoint => endpoint.status === 'R'),
+    [endpoints],
+  );
+  const hasAdditions = endpointsToAdd.length > 0;
+  const hasRemovals = endpointsToRemove.length > 0;
+  const isMixedSync = hasAdditions && hasRemovals;
 
   useEffect(() => {
     if (!open) {
@@ -43,14 +44,10 @@ export default function SyncEndpointsModal({
 
     setSelectedKeys(
       endpoints
-        .filter(endpoint =>
-          syncStatus === 'TO_ADD_ALL'
-            ? true
-            : endpoint.status === 'TO_ADD' || endpoint.status === 'TO_REMOVE',
-        )
+        .filter(endpoint => endpoint.status === 'A' || endpoint.status === 'R')
         .map(getEndpointKey),
     );
-  }, [open, endpoints, syncStatus]);
+  }, [open, endpoints]);
 
   const allAddKeys = useMemo(() => endpointsToAdd.map(getEndpointKey), [endpointsToAdd]);
   const allRemoveKeys = useMemo(() => endpointsToRemove.map(getEndpointKey), [endpointsToRemove]);
@@ -83,7 +80,7 @@ export default function SyncEndpointsModal({
       open={open}
       onCancel={loading ? undefined : onCancel}
       title={<span style={styles.modalTitle}>Sync with Swagger</span>}
-      width={syncStatus === 'CONFLICT' ? 920 : 560}
+      width={isMixedSync ? 920 : 560}
       centered
       footer={null}
       closable={!loading}
@@ -108,18 +105,10 @@ export default function SyncEndpointsModal({
         <div style={styles.body}>
           <div style={styles.sectionBody}>
             <div style={styles.subtitle}>
-              {syncStatus === 'CONFLICT' ? (
-                <>
-                  Swagger and stored endpoints differ for <strong>{serviceName}</strong>. Choose which new endpoints to add and which existing endpoints to remove.
-                </>
-              ) : (
-                <>
-                  List of endpoints for <strong>{serviceName}</strong> service is empty now. Choose endpoints to be added from Swagger.
-                </>
-              )}
+              {getSyncSubtitle(syncStatus, serviceName)}
             </div>
 
-            {syncStatus === 'CONFLICT' ? (
+            {isMixedSync ? (
               <div style={styles.conflictColumns}>
                 <div style={styles.conflictColumn}>
                   <div style={styles.columnHeader}>
@@ -155,7 +144,7 @@ export default function SyncEndpointsModal({
                   </div>
                 </div>
               </div>
-            ) : (
+            ) : hasAdditions ? (
               <>
                 <div style={styles.selectAllRow}>
                   <Checkbox
@@ -172,6 +161,23 @@ export default function SyncEndpointsModal({
                   {renderEndpointList(endpointsToAdd, selectedKeys, loading, setSelectedKeys)}
                 </div>
               </>
+            ) : (
+              <>
+                <div style={styles.selectAllRow}>
+                  <Checkbox
+                    checked={allRemoveChecked}
+                    indeterminate={removeIndeterminate}
+                    disabled={loading || endpointsToRemove.length === 0}
+                    onChange={e => handleToggleAll(allRemoveKeys, e.target.checked)}
+                  >
+                    <span style={styles.selectAllLabel}>Select all endpoints</span>
+                  </Checkbox>
+                </div>
+
+                <div style={styles.list}>
+                  {renderEndpointList(endpointsToRemove, selectedKeys, loading, setSelectedKeys)}
+                </div>
+              </>
             )}
           </div>
 
@@ -185,7 +191,7 @@ export default function SyncEndpointsModal({
               disabled={selectedKeys.length === 0}
               loading={loading}
             >
-              {syncStatus === 'CONFLICT' ? 'Apply sync changes' : 'Add endpoints'}
+              {getConfirmLabel(syncStatus)}
             </Button>
             <Button
               type="text"
@@ -200,6 +206,58 @@ export default function SyncEndpointsModal({
       </ConfigProvider>
     </Modal>
   );
+}
+
+function getSyncSubtitle(syncStatus: SyncEndpointsModalProps['syncStatus'], serviceName: string) {
+  if (syncStatus === 'A') {
+    return (
+      <>
+        List of endpoints for <strong>{serviceName}</strong> service is empty now. Choose endpoints to be added from Swagger.
+      </>
+    );
+  }
+
+  if (syncStatus === 'AU') {
+    return (
+      <>
+        Swagger contains new endpoints for <strong>{serviceName}</strong>. Existing endpoints will be kept; choose which new endpoints to add.
+      </>
+    );
+  }
+
+  if (syncStatus === 'UR') {
+    return (
+      <>
+        Stored endpoints for <strong>{serviceName}</strong> include entries missing from Swagger. Unchanged endpoints will be kept; choose which endpoints to remove.
+      </>
+    );
+  }
+
+  if (syncStatus === 'R') {
+    return (
+      <>
+        Swagger has no endpoints for <strong>{serviceName}</strong>. Choose which stored endpoints to remove.
+      </>
+    );
+  }
+
+  return (
+    <>
+      Swagger and stored endpoints differ for <strong>{serviceName}</strong>. Choose which new endpoints to add and which existing endpoints to remove.
+    </>
+  );
+}
+
+function getConfirmLabel(syncStatus: SyncEndpointsModalProps['syncStatus']) {
+  if (syncStatus === 'A' || syncStatus === 'AU') {
+    return 'Add endpoints';
+  }
+
+  if (syncStatus === 'UR' || syncStatus === 'R') {
+    return 'Remove endpoints';
+  }
+
+  return 'Apply sync changes';
 }
 
 function getEndpointKey(endpoint: EndpointSyncItem) {

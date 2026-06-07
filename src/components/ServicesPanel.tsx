@@ -68,7 +68,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   const [syncModalState, setSyncModalState] = useState<{
     serviceId: number;
     serviceName: string;
-    syncStatus: 'TO_ADD_ALL' | 'CONFLICT';
+    syncStatus: 'A' | 'AU' | 'AUR' | 'UR' | 'R';
     endpoints: EndpointSyncItem[];
   } | null>(null);
   const [syncCommitLoading, setSyncCommitLoading] = useState(false);
@@ -204,7 +204,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
       const response = await syncServiceEndpoints(service.serviceId);
       const syncStatus = response.syncStatus ?? response.status;
 
-      if (syncStatus === 'UNCHANGED') {
+      if (syncStatus === 'U') {
         modal.info({
           title: 'Sync with Swagger',
           content: (
@@ -222,15 +222,25 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
             },
           },
         });
+        return;
       }
-      if (syncStatus === 'TO_ADD_ALL' || syncStatus === 'CONFLICT') {
-        setSyncModalState({
-          serviceId: service.serviceId,
-          serviceName: service.serviceName,
-          syncStatus,
-          endpoints: response.endpoints ?? [],
-        });
+
+      if (!syncStatus) {
+        return;
       }
+
+      if (syncStatus !== 'A' && endpointsByService[service.serviceId] === undefined) {
+        const endpointsResponse = await getServiceEndpoints(service.serviceId);
+        setEndpointsByService(prev => ({ ...prev, [service.serviceId]: endpointsResponse.endpoints }));
+        setEndpointsErrorByService(prev => ({ ...prev, [service.serviceId]: null }));
+      }
+
+      setSyncModalState({
+        serviceId: service.serviceId,
+        serviceName: service.serviceName,
+        syncStatus,
+        endpoints: response.endpoints ?? [],
+      });
     } finally {
       setSyncLoadingByService(prev => ({ ...prev, [service.serviceId]: false }));
     }
@@ -248,44 +258,20 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
         (endpointsByService[syncModalState.serviceId] ?? []).map(endpoint => [getEndpointKey(endpoint), endpoint]),
       );
 
-      if (syncModalState.syncStatus === 'TO_ADD_ALL') {
-        const response = await replaceServiceEndpoints(
-          syncModalState.serviceId,
-          selectedEndpoints.map(endpoint => ({
-            endpointId: existingEndpointsByKey.get(getEndpointKey(endpoint))?.endpointId,
-            httpMethod: endpoint.httpMethod,
-            path: endpoint.path,
-          })),
-        );
-
-        setEndpointsByService(prev => ({
-          ...prev,
-          [syncModalState.serviceId]: response.endpoints,
-        }));
-        setEndpointsErrorByService(prev => ({
-          ...prev,
-          [syncModalState.serviceId]: null,
-        }));
-        setEndpointsExpanded(true);
-        setExpandedServiceId(String(syncModalState.serviceId));
-        setSyncModalState(null);
-        return;
-      }
-
       const selectedKeys = new Set(selectedEndpoints.map(endpoint => `${endpoint.httpMethod}:${endpoint.path}`));
       const replacementEndpoints: EndpointReplaceRequest[] = syncModalState.endpoints
         .filter(endpoint => {
           const key = getEndpointKey(endpoint);
 
-          if (endpoint.status === 'UNCHANGED') {
+          if (endpoint.status === 'U') {
             return true;
           }
 
-          if (endpoint.status === 'TO_ADD') {
+          if (endpoint.status === 'A') {
             return selectedKeys.has(key);
           }
 
-          if (endpoint.status === 'TO_REMOVE') {
+          if (endpoint.status === 'R') {
             return !selectedKeys.has(key);
           }
 
