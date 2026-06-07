@@ -2072,9 +2072,9 @@
           "status": {
             "type": "string",
             "enum": [
-              "TO_ADD",
-              "TO_REMOVE",
-              "UNCHANGED"
+              "A",
+              "U",
+              "R"
             ]
           }
         }
@@ -2085,9 +2085,12 @@
           "syncStatus": {
             "type": "string",
             "enum": [
-              "UNCHANGED",
-              "TO_ADD_ALL",
-              "CONFLICT"
+              "U",
+              "A",
+              "AU",
+              "AUR",
+              "UR",
+              "R"
             ]
           },
           "endpoints": {
