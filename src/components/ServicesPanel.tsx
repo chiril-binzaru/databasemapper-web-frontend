@@ -22,6 +22,7 @@ import NewEndpointModal from './NewEndpointModal';
 import SyncEndpointsModal from './SyncEndpointsModal';
 import { getServiceEndpoints, replaceServiceEndpoints, syncServiceEndpoints } from '../services/endpointsApi';
 import type { EndpointItem } from '../services/endpointsApi';
+import type { EndpointReplaceRequest } from '../services/endpointsApi';
 import type { EndpointSyncItem } from '../services/endpointsApi';
 import type { EndpointMappingTab } from '../services/endpointsApi';
 
@@ -34,6 +35,10 @@ const METHOD_COLORS: Record<string, string> = {
 };
 
 const SECTION_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getEndpointKey(endpoint: Pick<EndpointItem, 'httpMethod' | 'path'>) {
+  return `${endpoint.httpMethod}:${endpoint.path}`;
+}
 
 interface ServicesPanelProps {
   onOpenMapping: (mapping: EndpointMappingTab) => void;
@@ -239,10 +244,15 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
     setSyncCommitLoading(true);
 
     try {
+      const existingEndpointsByKey = new Map(
+        (endpointsByService[syncModalState.serviceId] ?? []).map(endpoint => [getEndpointKey(endpoint), endpoint]),
+      );
+
       if (syncModalState.syncStatus === 'TO_ADD_ALL') {
         const response = await replaceServiceEndpoints(
           syncModalState.serviceId,
           selectedEndpoints.map(endpoint => ({
+            endpointId: existingEndpointsByKey.get(getEndpointKey(endpoint))?.endpointId,
             httpMethod: endpoint.httpMethod,
             path: endpoint.path,
           })),
@@ -263,9 +273,9 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
       }
 
       const selectedKeys = new Set(selectedEndpoints.map(endpoint => `${endpoint.httpMethod}:${endpoint.path}`));
-      const replacementEndpoints = syncModalState.endpoints
+      const replacementEndpoints: EndpointReplaceRequest[] = syncModalState.endpoints
         .filter(endpoint => {
-          const key = `${endpoint.httpMethod}:${endpoint.path}`;
+          const key = getEndpointKey(endpoint);
 
           if (endpoint.status === 'UNCHANGED') {
             return true;
@@ -282,6 +292,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
           return false;
         })
         .map(endpoint => ({
+          endpointId: existingEndpointsByKey.get(getEndpointKey(endpoint))?.endpointId,
           httpMethod: endpoint.httpMethod,
           path: endpoint.path,
         }));

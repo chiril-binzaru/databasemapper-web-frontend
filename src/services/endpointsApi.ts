@@ -26,6 +26,7 @@ export interface EndpointSyncItem {
 }
 
 export interface EndpointReplaceRequest {
+  endpointId?: number;
   httpMethod: string;
   path: string;
 }

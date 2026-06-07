@@ -819,7 +819,6 @@ function JoinDefinitionModal({
         }
       }
     }
-    setAddTableOpen(false);
     setAddTableSchema('');
     setAddTableTable('');
   };
@@ -1774,15 +1773,6 @@ function MappingGrid({
                     setSelectedColumns(nextColumns);
                     setSelectedColumnTypes(nextColumnTypes);
                     setSelectedPrimaryKeys(nextPrimaryKeys);
-                    setSelectedJoinRowIndexes(prev => {
-                      if (!prev.has(index)) {
-                        return prev;
-                      }
-
-                      const next = new Set(prev);
-                      next.delete(index);
-                      return next;
-                    });
                     emitMappingChange(nextSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
 
                     if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
