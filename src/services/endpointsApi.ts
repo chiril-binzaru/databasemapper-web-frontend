@@ -22,7 +22,7 @@ export interface EndpointsResponse {
 export interface EndpointSyncItem {
   httpMethod: string;
   path: string;
-  status?: 'TO_ADD' | 'TO_REMOVE' | 'UNCHANGED';
+  status?: 'A' | 'U' | 'R';
 }
 
 export interface EndpointReplaceRequest {
@@ -32,8 +32,8 @@ export interface EndpointReplaceRequest {
 }
 
 export interface SyncEndpointsResponse {
-  status?: 'UNCHANGED' | 'TO_ADD_ALL' | 'CONFLICT';
-  syncStatus?: 'UNCHANGED' | 'TO_ADD_ALL' | 'CONFLICT';
+  status?: 'U' | 'A' | 'AU' | 'AUR' | 'UR' | 'R';
+  syncStatus?: 'U' | 'A' | 'AU' | 'AUR' | 'UR' | 'R';
   endpoints?: EndpointSyncItem[] | null;
 }
 
