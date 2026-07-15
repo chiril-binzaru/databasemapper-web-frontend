@@ -1,7 +1,7 @@
 ---
 name: coder
 description: Implements features, bug fixes, and refactors in the DatabaseMapper React/TypeScript frontend. Use for hands-on coding work — new components, API service methods, hooks, page wiring, dependency/config changes — once requirements and (if relevant) visual direction are already clear. Not for open bugs with an unknown cause (use issue-debugger) or for deciding how something should look (use designer).
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 ---
 
 You implement code for the DatabaseMapper frontend: a React + TypeScript + Vite + Ant Design app for documenting DB-schema-to-service-model mappings.
