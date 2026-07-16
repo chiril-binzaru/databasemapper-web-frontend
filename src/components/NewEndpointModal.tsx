@@ -61,7 +61,7 @@ export default function NewEndpointModal({ open, serviceId, onClose, onAdd }: Ne
       centered
       footer={null}
       styles={{
-        container: { padding: 0, background: '#2b2b2b', borderRadius: 8 },
+        container: { padding: 0, background: 'var(--bg-surface-raised)', borderRadius: 'var(--r-md)' },
         header: { padding: '16px 48px 12px 20px', background: 'transparent', borderBottom: 'none', marginBottom: 0 },
         body: { padding: 0 },
       }}
@@ -70,8 +70,8 @@ export default function NewEndpointModal({ open, serviceId, onClose, onAdd }: Ne
         componentSize="large"
         theme={{
           components: {
-            Input: { hoverBorderColor: '#424242', activeShadow: 'none' },
-            Select: { hoverBorderColor: '#424242' },
+            Input: { hoverBorderColor: 'var(--border-strong)', activeShadow: 'none' },
+            Select: { hoverBorderColor: 'var(--border-strong)' },
           },
         }}
       >
@@ -132,9 +132,8 @@ export default function NewEndpointModal({ open, serviceId, onClose, onAdd }: Ne
 
 const styles: Record<string, CSSProperties> = {
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 600,
-    color: 'rgba(255,255,255,0.85)',
+    font: 'var(--text-2xl)',
+    color: 'var(--text-primary)',
   },
   body: {
     display: 'flex',
@@ -152,19 +151,19 @@ const styles: Record<string, CSSProperties> = {
     gap: 4,
   },
   label: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-tertiary)',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
     userSelect: 'none',
   },
   errorText: {
-    fontSize: 11,
-    color: '#ff4d4f',
+    font: 'var(--text-sm)',
+    color: 'var(--status-critical)',
   },
   footerSeparator: {
     height: 1,
-    background: 'rgba(255,255,255,0.06)',
+    background: 'var(--border-subtle)',
   },
   footer: {
     display: 'flex',
@@ -177,7 +176,7 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: 'none',
   },
   btnCancel: {
-    color: 'rgba(255,255,255,0.45)',
-    border: '1px solid rgba(255,255,255,0.45)',
+    color: 'var(--text-tertiary)',
+    border: '1px solid var(--border-strong)',
   },
 };

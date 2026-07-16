@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PanelType } from '../types/panel';
 import ServicesPanel from './ServicesPanel';
+import SettingsPanel from './SettingsPanel';
 import NewServiceModal from './NewServiceModal';
 import { useQueryClient } from '@tanstack/react-query';
 import type { EndpointMappingTab } from '../services/endpointsApi';
@@ -37,11 +38,11 @@ function ActionBtn({ tooltip, active, onClick, children }: ActionBtnProps) {
         onMouseLeave={() => setHovered(false)}
         style={{
           ...styles.actionBtn,
-          color: active ? '#4096ff' : 'rgba(255,255,255,0.45)',
+          color: active ? 'var(--accent)' : 'var(--text-tertiary)',
           background: active
-            ? 'rgba(64,150,255,0.15)'
+            ? 'var(--accent-subtle)'
             : hovered
-            ? 'rgba(255,255,255,0.08)'
+            ? 'var(--bg-subtle)'
             : 'transparent',
         }}
       >
@@ -105,11 +106,15 @@ export default function AppSidePanel({
         }}
       >
         <div style={styles.header}>
-          <Typography.Text style={styles.title}>Services</Typography.Text>
+          <Typography.Text style={styles.title}>
+            {panel === 'settings' ? 'Settings' : 'Services'}
+          </Typography.Text>
           <div style={styles.actions}>
-            <ActionBtn tooltip="Add Service" onClick={() => setAddModalOpen(true)}>
-              <PlusOutlined />
-            </ActionBtn>
+            {panel === 'services' && (
+              <ActionBtn tooltip="Add Service" onClick={() => setAddModalOpen(true)}>
+                <PlusOutlined />
+              </ActionBtn>
+            )}
             <ActionBtn tooltip={pinned ? 'Unpin' : 'Pin'} active={pinned} onClick={onTogglePin}>
               <PinIcon width={20} height={20} />
             </ActionBtn>
@@ -119,7 +124,11 @@ export default function AppSidePanel({
           </div>
         </div>
         <div style={styles.content}>
-          <ServicesPanel onOpenMapping={onOpenMapping} />
+          {panel === 'settings' ? (
+            <SettingsPanel />
+          ) : (
+            <ServicesPanel onOpenMapping={onOpenMapping} />
+          )}
         </div>
         <div
           style={styles.resizeHandle}
@@ -140,8 +149,8 @@ export default function AppSidePanel({
 }
 
 const base: CSSProperties = {
-  background: '#1f1f1f',
-  borderRight: '1px solid #2a2a2a',
+  background: 'var(--bg-surface)',
+  borderRight: '1px solid var(--border-subtle)',
   display: 'flex',
   flexDirection: 'column',
   minWidth: 0,
@@ -155,7 +164,7 @@ const styles: Record<string, CSSProperties> = {
     top: 0,
     bottom: 0,
     zIndex: 10,
-    boxShadow: '4px 0 16px rgba(0,0,0,0.5)',
+    boxShadow: 'var(--shadow-lg)',
   },
   panelPinned: {
     ...base,
@@ -167,14 +176,13 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '0 16px',
-    borderBottom: '1px solid #2a2a2a',
+    padding: '0 var(--sp-4)',
+    borderBottom: '1px solid var(--border-subtle)',
     flexShrink: 0,
   },
   title: {
-    fontSize: 17,
-    fontWeight: 600,
-    color: 'rgba(255,255,255,0.75)',
+    font: 'var(--text-lg)',
+    color: 'var(--text-primary)',
   },
   actions: {
     display: 'flex',
@@ -187,7 +195,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
-    borderRadius: 4,
+    borderRadius: 'var(--r-xs)',
     fontSize: 20,
     transition: 'background 0.15s, color 0.15s',
   },

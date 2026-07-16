@@ -86,22 +86,12 @@ export default function SyncEndpointsModal({
       closable={!loading}
       mask={{ closable: !loading }}
       styles={{
-        container: { padding: 0, background: '#2b2b2b', borderRadius: 8 },
+        container: { padding: 0, background: 'var(--bg-surface-raised)', borderRadius: 'var(--r-md)' },
         header: { padding: '16px 48px 12px 20px', background: 'transparent', borderBottom: 'none', marginBottom: 0 },
         body: { padding: 0 },
       }}
     >
-      <ConfigProvider
-        componentSize="large"
-        theme={{
-          components: {
-            Checkbox: {
-              colorPrimary: '#1677ff',
-              colorPrimaryHover: '#4096ff',
-            },
-          },
-        }}
-      >
+      <ConfigProvider componentSize="large">
         <div style={styles.body}>
           <div style={styles.sectionBody}>
             <div style={styles.subtitle}>
@@ -288,7 +278,7 @@ function renderEndpointList(
             );
           }}
         />
-        <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[endpoint.httpMethod] ?? 'rgba(255,255,255,0.5)' }}>
+        <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[endpoint.httpMethod] ?? 'var(--text-tertiary)' }}>
           {endpoint.httpMethod}
         </span>
         <span style={styles.endpointPath}>{endpoint.path}</span>
@@ -307,9 +297,8 @@ const METHOD_COLORS: Record<string, string> = {
 
 const styles: Record<string, CSSProperties> = {
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 600,
-    color: 'rgba(255,255,255,0.85)',
+    font: 'var(--text-2xl)',
+    color: 'var(--text-primary)',
   },
   body: {
     display: 'flex',
@@ -322,13 +311,13 @@ const styles: Record<string, CSSProperties> = {
     gap: 12,
   },
   subtitle: {
-    fontSize: 13,
+    font: 'var(--text-base)',
     lineHeight: 1.5,
-    color: 'rgba(255,255,255,0.75)',
+    color: 'var(--text-secondary)',
   },
   selectAllRow: {
     padding: '4px 0 6px',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    borderBottom: '1px solid var(--border-subtle)',
   },
   conflictColumns: {
     display: 'grid',
@@ -346,15 +335,15 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'space-between',
     gap: 12,
     padding: '4px 0 8px',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    borderBottom: '1px solid var(--border-subtle)',
   },
   columnTitle: {
-    fontSize: 13,
+    font: 'var(--text-base-md)',
     fontWeight: 600,
-    color: 'rgba(255,255,255,0.82)',
+    color: 'var(--text-primary)',
   },
   selectAllLabel: {
-    color: 'rgba(255,255,255,0.75)',
+    color: 'var(--text-secondary)',
     fontSize: 12,
     fontWeight: 500,
   },
@@ -367,9 +356,9 @@ const styles: Record<string, CSSProperties> = {
   },
   emptyListHint: {
     padding: '16px 12px',
-    borderRadius: 6,
-    background: 'rgba(255,255,255,0.03)',
-    color: 'rgba(255,255,255,0.4)',
+    borderRadius: 'var(--r-sm)',
+    background: 'var(--bg-subtle)',
+    color: 'var(--text-tertiary)',
     fontSize: 12,
     textAlign: 'center',
   },
@@ -378,8 +367,8 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 10,
     padding: '8px 10px',
-    borderRadius: 6,
-    background: 'rgba(255,255,255,0.03)',
+    borderRadius: 'var(--r-sm)',
+    background: 'var(--bg-subtle)',
     cursor: 'pointer',
   },
   endpointMethod: {
@@ -390,14 +379,13 @@ const styles: Record<string, CSSProperties> = {
     width: 42,
   },
   endpointPath: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.65)',
-    fontFamily: 'monospace',
+    font: 'var(--text-mono)',
+    color: 'var(--text-secondary)',
     wordBreak: 'break-all',
   },
   footerSeparator: {
     height: 1,
-    background: 'rgba(255,255,255,0.06)',
+    background: 'var(--border-subtle)',
   },
   footer: {
     display: 'flex',
@@ -410,7 +398,7 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: 'none',
   },
   btnCancel: {
-    color: 'rgba(255,255,255,0.45)',
-    border: '1px solid rgba(255,255,255,0.45)',
+    color: 'var(--text-tertiary)',
+    border: '1px solid var(--border-strong)',
   },
 };

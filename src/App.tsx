@@ -6,6 +6,8 @@ import AppSidePanel from './components/AppSidePanel';
 import MappingWorkspace from './components/MappingWorkspace';
 import type { PanelType } from './types/panel';
 import type { CSSProperties } from 'react';
+import ThemeModeProvider from './components/ThemeModeProvider';
+import { useThemeMode } from './hooks/useThemeMode';
 import {
   createEndpointMapping,
   getEndpointMapping,
@@ -764,14 +766,47 @@ const queryClient = new QueryClient({
   },
 });
 
+const LIGHT_TOKENS = {
+  colorPrimary: '#3E63DD',
+  colorBgBase: '#F5F6FA',
+  colorBgContainer: '#FFFFFF',
+  colorTextBase: '#12151C',
+  borderRadius: 8,
+  fontFamily: 'var(--font-sans)',
+};
+
+const DARK_TOKENS = {
+  colorPrimary: '#5B7CFA',
+  colorBgBase: '#0B0E14',
+  colorBgContainer: '#161B26',
+  colorTextBase: '#EDEFF4',
+  borderRadius: 8,
+  fontFamily: 'var(--font-sans)',
+};
+
+function ThemedApp() {
+  const { mode } = useThemeMode();
+
+  return (
+    <ConfigProvider
+      theme={{
+        algorithm: mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: mode === 'dark' ? DARK_TOKENS : LIGHT_TOKENS,
+      }}
+    >
+      <AntApp>
+        <AppLayout />
+      </AntApp>
+    </ConfigProvider>
+  );
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-        <AntApp>
-          <AppLayout />
-        </AntApp>
-      </ConfigProvider>
+      <ThemeModeProvider>
+        <ThemedApp />
+      </ThemeModeProvider>
     </QueryClientProvider>
   );
 }
@@ -781,7 +816,7 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     height: '100vh',
     overflow: 'hidden',
-    background: '#141414',
+    background: 'var(--bg-canvas)',
   },
   workspace: {
     flex: 1,
