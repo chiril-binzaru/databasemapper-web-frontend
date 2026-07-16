@@ -10,7 +10,7 @@ export default function ConnectionsPanel() {
           type="text"
           icon={<PlusOutlined />}
           size="small"
-          style={{ color: 'rgba(255,255,255,0.65)' }}
+          style={{ color: 'var(--text-secondary)' }}
           disabled
         >
           New Connection
@@ -31,8 +31,8 @@ const styles: Record<string, CSSProperties> = {
     height: '100%',
   },
   toolbar: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #2a2a2a',
+    padding: 'var(--sp-3) var(--sp-4)',
+    borderBottom: '1px solid var(--border-subtle)',
     flexShrink: 0,
   },
   empty: {
@@ -42,7 +42,7 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'center',
   },
   emptyText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.2)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-disabled)',
   },
 };

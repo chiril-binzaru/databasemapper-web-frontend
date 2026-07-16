@@ -1,4 +1,5 @@
 import { CloseOutlined, KeyOutlined } from '@ant-design/icons';
+import { Segmented } from 'antd';
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
@@ -565,8 +566,7 @@ function ScopeSelect({
   );
 }
 
-function JoinDefinitionModal({
-  open,
+function JoinsEditor({
   scopes,
   schemasStatus,
   schemas,
@@ -579,9 +579,7 @@ function JoinDefinitionModal({
   onLoadTables,
   onLoadColumns,
   onChangeJoins,
-  onClose,
 }: {
-  open: boolean;
   scopes: ScopeEntry[];
   schemasStatus: MappingWorkspaceTab['schemasStatus'];
   schemas: string[];
@@ -594,7 +592,6 @@ function JoinDefinitionModal({
   onLoadTables: (endpointId: number, schemaName: string) => void;
   onLoadColumns: (endpointId: number, schemaName: string, tableName: string) => void;
   onChangeJoins: (joins: JoinEntryDto[]) => void;
-  onClose: () => void;
 }) {
   const diagramRef = useRef<HTMLDivElement | null>(null);
   const columnButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -664,30 +661,16 @@ function JoinDefinitionModal({
     setEdgePoints(nextPoints);
   };
 
-  // Reset UI state when modal opens or scope changes
+  // Reset selection state whenever the visible set of tables changes
   useEffect(() => {
-    if (!open) {
-      return;
-    }
     setPendingColumnPath(null);
     setSelectedJoinIndex(null);
     setHoveredColumnPath(null);
-  }, [open, tablesSignature]);
+  }, [tablesSignature]);
 
-  // Reset to first scope and clear selection on open
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    setSelectedScopeIndex(0);
-  }, [open]);
-
-  // Re-derive extraTables from persisted joins whenever scope or open changes,
+  // Re-derive extraTables from persisted joins whenever scope changes,
   // so previously-defined junction tables always reappear automatically.
   useEffect(() => {
-    if (!open) {
-      return;
-    }
     const currentScopeTableKeys = new Set(currentScope.tables.map(t => t.key));
     const seen = new Set<string>();
     const fromJoins: SelectedJoinTable[] = [];
@@ -711,7 +694,7 @@ function JoinDefinitionModal({
     setExtraTables(fromJoins);
     setAddTableSchema('');
     setAddTableTable('');
-  }, [open, selectedScopeIndex]);
+  }, [selectedScopeIndex]);
 
   // Guard scope index against out-of-bounds when scopes change
   useEffect(() => {
@@ -757,31 +740,22 @@ function JoinDefinitionModal({
   }, []);
 
   useLayoutEffect(() => {
-    if (!open) {
-      return;
-    }
     updateEdgePoints();
-  }, [columnsByTable, joins, open, tablesSignature, tablePositions]);
+  }, [columnsByTable, joins, tablesSignature, tablePositions]);
 
   useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
     window.addEventListener('resize', updateEdgePoints);
     return () => window.removeEventListener('resize', updateEdgePoints);
-  }, [open]);
+  }, []);
 
   // Load columns for every table currently shown in the diagram
   useEffect(() => {
-    if (!open) {
-      return;
-    }
     allTables.forEach(table => {
       if ((columnsStatusByTable[table.key] ?? 'idle') === 'idle') {
         onLoadColumns(endpointId, table.schemaName, table.tableName);
       }
     });
-  }, [open, tablesSignature, columnsStatusByTable, endpointId, onLoadColumns]);
+  }, [tablesSignature, columnsStatusByTable, endpointId, onLoadColumns]);
 
   const removeExtraTable = (tableKey: string) => {
     setExtraTables(prev => prev.filter(t => t.key !== tableKey));
@@ -825,9 +799,6 @@ function JoinDefinitionModal({
 
   // Delete selected join via keyboard
   useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Delete') {
         return;
@@ -840,11 +811,7 @@ function JoinDefinitionModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open]);
-
-  if (!open) {
-    return null;
-  }
+  }, []);
 
   const edgeLines = visibleJoins
     .map<JoinEdgeLine | null>(({ join, index }) => {
@@ -1001,26 +968,18 @@ function JoinDefinitionModal({
   };
 
   return (
-    <div style={styles.modalOverlay}>
-      <div style={styles.joinModal}>
+    <div style={styles.joinsBody}>
 
-        {/* Row 1 — title + scope + close */}
-        <div style={styles.joinModalHeader}>
-          <span style={styles.joinModalTitle}>Define joins</span>
-          <div style={styles.joinScopeRow}>
-            <span style={styles.joinScopeLabel}>Scope</span>
-            <ScopeSelect
-              value={selectedScopeIndex}
-              scopes={scopes}
-              onChange={setSelectedScopeIndex}
-            />
-          </div>
-          <button type="button" style={styles.joinModalCloseButton} onClick={onClose}>
-            <CloseOutlined />
-          </button>
+      {/* Row 1 — scope + add table controls */}
+      <div style={styles.joinControlsRow}>
+        <div style={styles.joinScopeRow}>
+          <span style={styles.joinScopeLabel}>Scope</span>
+          <ScopeSelect
+            value={selectedScopeIndex}
+            scopes={scopes}
+            onChange={setSelectedScopeIndex}
+          />
         </div>
-
-        {/* Row 2 — add table controls */}
         <div style={styles.joinAddTableRow}>
           <SchemaCell
             value={addTableSchema}
@@ -1059,9 +1018,10 @@ function JoinDefinitionModal({
             Add to tables space
           </button>
         </div>
+      </div>
 
-        {/* Row 3 — diagram canvas, fills remaining height */}
-        <div style={styles.joinDiagram}>
+      {/* Row 2 — diagram canvas */}
+      <div style={styles.joinDiagram}>
           <div style={styles.joinTableCanvas} onScroll={updateEdgePoints}>
             <div
               ref={diagramRef}
@@ -1175,9 +1135,9 @@ function JoinDefinitionModal({
           </div>
         </div>
 
-        {/* Row 4 — join conditions panel */}
-        <div style={styles.joinBottomPanel}>
-          {selectedJoin ? (
+      {/* Row 3 — join conditions panel */}
+      <div style={styles.joinBottomPanel}>
+        {selectedJoin ? (
             <>
               <div style={styles.joinBottomPanelHeader}>
                 <span style={styles.joinSidePanelTitle}>Join conditions</span>
@@ -1234,15 +1194,6 @@ function JoinDefinitionModal({
               Click a column, then a column in another table to create a join.
             </span>
           )}
-        </div>
-
-        {/* Row 5 — footer */}
-        <div style={styles.joinModalFooter}>
-          <button type="button" style={styles.joinModalActionButton} onClick={onClose}>
-            Close
-          </button>
-        </div>
-
       </div>
     </div>
   );
@@ -1517,6 +1468,139 @@ function getRowsFromMapping(mapping: MappingDto | null): MappingGridRow[] {
     }));
 }
 
+type MappingViewMode = 'flat' | 'hierarchical';
+
+interface MappingDisplayRow {
+  kind: 'leaf' | 'group';
+  key: string;
+  depth: number;
+  label: string;
+  rowIndex: number | null;
+  groupPath: string;
+}
+
+function isPathCollapsedByAncestor(
+  pathSegments: string[],
+  collapsedGroups: Set<string>,
+  includeSelf: boolean,
+): boolean {
+  const upper = includeSelf ? pathSegments.length : pathSegments.length - 1;
+
+  for (let i = 1; i <= upper; i += 1) {
+    if (collapsedGroups.has(pathSegments.slice(0, i).join('.'))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// serviceRows is a flat pre-order DFS list, so fields sharing a dot-prefix are
+// always contiguous — a single scan with a path stack is enough to rebuild the tree.
+function buildDisplayRows(
+  serviceRows: MappingGridRow[],
+  viewMode: MappingViewMode,
+  collapsedGroups: Set<string>,
+): MappingDisplayRow[] {
+  if (viewMode === 'flat') {
+    return serviceRows.map((row, index) => ({
+      kind: 'leaf',
+      key: `leaf-${index}-${row.name}`,
+      depth: 0,
+      label: row.name,
+      rowIndex: index,
+      groupPath: '',
+    }));
+  }
+
+  const rows: MappingDisplayRow[] = [];
+  let stack: string[] = [];
+
+  serviceRows.forEach((row, index) => {
+    const segments = row.name.split('.');
+    const parentSegments = segments.slice(0, -1);
+    const leafLabel = segments[segments.length - 1];
+
+    let commonLength = 0;
+    while (
+      commonLength < stack.length
+      && commonLength < parentSegments.length
+      && stack[commonLength] === parentSegments[commonLength]
+    ) {
+      commonLength += 1;
+    }
+    stack = stack.slice(0, commonLength);
+
+    for (let i = commonLength; i < parentSegments.length; i += 1) {
+      stack.push(parentSegments[i]);
+      if (!isPathCollapsedByAncestor(stack, collapsedGroups, false)) {
+        rows.push({
+          kind: 'group',
+          key: `group-${stack.join('.')}`,
+          depth: stack.length - 1,
+          label: stack[stack.length - 1],
+          rowIndex: null,
+          groupPath: stack.join('.'),
+        });
+      }
+    }
+
+    if (!isPathCollapsedByAncestor(stack, collapsedGroups, true)) {
+      rows.push({
+        kind: 'leaf',
+        key: `leaf-${index}-${row.name}`,
+        depth: stack.length,
+        label: leafLabel,
+        rowIndex: index,
+        groupPath: stack.join('.'),
+      });
+    }
+  });
+
+  return rows;
+}
+
+function CollapsibleSection({
+  title,
+  expanded,
+  onToggleExpanded,
+  headerExtra,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  headerExtra?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div style={styles.sectionCard}>
+      <div style={styles.sectionHeader}>
+        <button
+          type="button"
+          style={styles.sectionToggleButton}
+          aria-expanded={expanded}
+          onClick={onToggleExpanded}
+        >
+          <ChevronDown
+            size={14}
+            strokeWidth={2}
+            style={{
+              ...styles.sectionChevron,
+              transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+            }}
+          />
+          <span style={styles.sectionTitle}>{title}</span>
+        </button>
+        {headerExtra}
+      </div>
+      <div style={{ display: expanded ? 'block' : 'none' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function MappingGrid({
   endpointId,
   mapping,
@@ -1550,14 +1634,16 @@ function MappingGrid({
   onLoadColumns: (endpointId: number, schemaName: string, tableName: string) => void;
   onChangeMapping: (endpointId: number, mapping: MappingDto) => void;
 }) {
-  const serviceRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const databaseRowCount = Math.max(EMPTY_GRID_ROWS, serviceRows.length);
   const [selectedSchemas, setSelectedSchemas] = useState<string[]>([]);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [selectedColumnTypes, setSelectedColumnTypes] = useState<string[]>([]);
   const [selectedPrimaryKeys, setSelectedPrimaryKeys] = useState<boolean[]>([]);
-  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [mappingSectionExpanded, setMappingSectionExpanded] = useState(true);
+  const [joinsSectionExpanded, setJoinsSectionExpanded] = useState(true);
+  const [viewMode, setViewMode] = useState<MappingViewMode>('flat');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const flattenedEntries = mapping ? flattenMappingEntries(mapping.fieldMappings) : [];
@@ -1652,6 +1738,26 @@ function MappingGrid({
     [mapping, selectedSchemas, selectedTables, serviceRows],
   );
 
+  const joins = mapping?.joins ?? [];
+
+  const displayRows = useMemo(
+    () => buildDisplayRows(serviceRows, viewMode, collapsedGroups),
+    [serviceRows, viewMode, collapsedGroups],
+  );
+  const displayRowCount = Math.max(EMPTY_GRID_ROWS, displayRows.length);
+
+  const toggleGroupCollapsed = (groupPath: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupPath)) {
+        next.delete(groupPath);
+      } else {
+        next.add(groupPath);
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     setSelectedPrimaryKeys(currentPrimaryKeys => currentPrimaryKeys.map((currentPrimaryKey, index) => {
       const schemaName = selectedSchemas[index] ?? '';
@@ -1669,21 +1775,84 @@ function MappingGrid({
   }, [columnsByTable, selectedColumns, selectedSchemas, selectedTables]);
 
   return (
-    <>
+    <div style={styles.sectionsStack}>
+      <CollapsibleSection
+        title="Mapping"
+        expanded={mappingSectionExpanded}
+        onToggleExpanded={() => setMappingSectionExpanded(value => !value)}
+      >
     <div style={styles.gridShell}>
       <div style={styles.gridPane}>
-        <div style={styles.gridSectionHeader}>Service</div>
+        <div style={styles.gridSectionHeader}>
+          <span>Service</span>
+          <div style={styles.gridHeaderActions}>
+            <Segmented
+              size="small"
+              value={viewMode}
+              onChange={value => setViewMode(value as MappingViewMode)}
+              options={[
+                { label: 'Flat', value: 'flat' },
+                { label: 'Hierarchical', value: 'hierarchical' },
+              ]}
+            />
+          </div>
+        </div>
         <div style={styles.gridHeaderRow}>
           <span style={styles.gridHeaderCell}>Field</span>
           <span style={styles.gridHeaderCell}>Type</span>
           <span style={styles.gridHeaderCell}>Format</span>
         </div>
-        {Array.from({ length: serviceRowCount }).map((_, index) => {
-          const row = serviceRows[index];
+        {Array.from({ length: displayRowCount }).map((_, position) => {
+          const displayRow = displayRows[position];
+
+          if (!displayRow) {
+            return (
+              <div key={`service-empty-${position}`} style={styles.gridRow}>
+                <span style={styles.gridCellText} />
+                <span style={styles.gridCellText} />
+                <span style={styles.gridCellTextMuted} />
+              </div>
+            );
+          }
+
+          if (displayRow.kind === 'group') {
+            const isCollapsed = collapsedGroups.has(displayRow.groupPath);
+
+            return (
+              <div key={displayRow.key} style={styles.gridRow}>
+                <button
+                  type="button"
+                  style={{ ...styles.hierarchyGroupCell, paddingLeft: 12 + displayRow.depth * 16 }}
+                  onClick={() => toggleGroupCollapsed(displayRow.groupPath)}
+                >
+                  <ChevronDown
+                    size={12}
+                    strokeWidth={2}
+                    style={{
+                      ...styles.hierarchyChevron,
+                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    }}
+                  />
+                  <span style={styles.hierarchyGroupLabel}>{displayRow.label}</span>
+                </button>
+                <span style={styles.gridCellText} />
+                <span style={styles.gridCellTextMuted} />
+              </div>
+            );
+          }
+
+          const row = serviceRows[displayRow.rowIndex as number];
 
           return (
-            <div key={`service-${index}`} style={styles.gridRow}>
-              <span style={styles.gridCellText}>{row?.name ?? ''}</span>
+            <div key={displayRow.key} style={styles.gridRow}>
+              <span
+                style={{
+                  ...styles.gridCellText,
+                  ...(viewMode === 'hierarchical' ? { paddingLeft: 12 + displayRow.depth * 16 } : null),
+                }}
+              >
+                {viewMode === 'hierarchical' ? displayRow.label : row?.name ?? ''}
+              </span>
               <span style={styles.gridCellText}>{row?.type ?? ''}</span>
               <span style={styles.gridCellTextMuted}>{row?.format ?? ''}</span>
             </div>
@@ -1696,15 +1865,6 @@ function MappingGrid({
       <div style={styles.gridPane}>
         <div style={styles.gridSectionHeader}>
           <span>Database</span>
-          <div style={styles.gridHeaderActions}>
-            <button
-              type="button"
-              style={styles.gridHeaderActionButton}
-              onClick={() => setJoinModalOpen(true)}
-            >
-              Joins
-            </button>
-          </div>
         </div>
         <div style={styles.databaseGridHeaderRow}>
           <span style={styles.gridHeaderCell}>Schema</span>
@@ -1712,12 +1872,12 @@ function MappingGrid({
           <span style={styles.gridHeaderCell}>Column</span>
           <span style={styles.gridHeaderCell}>Type</span>
         </div>
-        {Array.from({ length: databaseRowCount }).map((_, index) => {
-          const serviceRow = serviceRows[index];
+        {Array.from({ length: displayRowCount }).map((_, position) => {
+          const displayRow = displayRows[position];
 
-          if (!serviceRow) {
+          if (!displayRow || displayRow.kind === 'group') {
             return (
-              <div key={`database-${index}`} style={styles.databaseGridRow}>
+              <div key={displayRow ? `${displayRow.key}-db` : `database-empty-${position}`} style={styles.databaseGridRow}>
                 <span style={styles.gridCellText} />
                 <span style={styles.gridCellText} />
                 <span style={styles.gridCellText} />
@@ -1726,6 +1886,7 @@ function MappingGrid({
             );
           }
 
+          const index = displayRow.rowIndex as number;
           const selectedSchema = selectedSchemas[index] ?? '';
           const selectedTable = selectedTables[index] ?? '';
           const selectedColumn = selectedColumns[index] ?? '';
@@ -1746,7 +1907,7 @@ function MappingGrid({
           const selectedColumnInfo = columns.find(column => column.name === selectedColumn);
 
           return (
-            <div key={`database-${index}`} style={styles.databaseGridRow}>
+            <div key={displayRow.key} style={styles.databaseGridRow}>
               <span style={styles.schemaGridCell}>
                 <SchemaCell
                   value={selectedSchemas[index] ?? ''}
@@ -1863,23 +2024,36 @@ function MappingGrid({
         )}
       </div>
     </div>
-    <JoinDefinitionModal
-      open={joinModalOpen}
-      scopes={scopes}
-      schemasStatus={schemasStatus}
-      schemas={schemas}
-      columnsByTable={columnsByTable}
-      columnsStatusByTable={columnsStatusByTable}
-      tablesBySchema={tablesBySchema}
-      tablesStatusBySchema={tablesStatusBySchema}
-      joins={mapping?.joins ?? []}
-      endpointId={endpointId}
-      onLoadTables={onLoadTables}
-      onLoadColumns={onLoadColumns}
-      onChangeJoins={emitJoinsChange}
-      onClose={() => setJoinModalOpen(false)}
-    />
-    </>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Joins"
+        expanded={joinsSectionExpanded}
+        onToggleExpanded={() => setJoinsSectionExpanded(value => !value)}
+        headerExtra={
+          <span style={styles.sectionHeaderSummary}>
+            {joins.length === 0 ? 'No joins defined' : `${joins.length} join${joins.length === 1 ? '' : 's'} defined`}
+          </span>
+        }
+      >
+        <div style={styles.sectionBodyPadded}>
+          <JoinsEditor
+            scopes={scopes}
+            schemasStatus={schemasStatus}
+            schemas={schemas}
+            columnsByTable={columnsByTable}
+            columnsStatusByTable={columnsStatusByTable}
+            tablesBySchema={tablesBySchema}
+            tablesStatusBySchema={tablesStatusBySchema}
+            joins={joins}
+            endpointId={endpointId}
+            onLoadTables={onLoadTables}
+            onLoadColumns={onLoadColumns}
+            onChangeJoins={emitJoinsChange}
+          />
+        </div>
+      </CollapsibleSection>
+    </div>
   );
 }
 
@@ -2258,20 +2432,89 @@ const styles: Record<string, CSSProperties> = {
     color: '#ffccc7',
     fontSize: 12,
   },
+  sectionsStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+  },
+  sectionCard: {
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 14,
+    background: '#181818',
+    overflow: 'hidden',
+  },
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    minHeight: 44,
+    padding: '0 16px',
+    background: 'linear-gradient(180deg, rgba(64,150,255,0.14) 0%, rgba(64,150,255,0.04) 100%)',
+    borderBottom: '1px solid rgba(255,255,255,0.08)',
+  },
+  sectionToggleButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    cursor: 'pointer',
+    color: 'rgba(255,255,255,0.82)',
+  },
+  sectionChevron: {
+    flexShrink: 0,
+    color: 'rgba(255,255,255,0.46)',
+    transition: 'transform 0.15s ease',
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  sectionHeaderSummary: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 12,
+  },
+  sectionBodyPadded: {
+    padding: 16,
+  },
+  hierarchyGroupCell: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    height: '100%',
+    border: 'none',
+    background: 'transparent',
+    borderRight: '1px solid rgba(255,255,255,0.06)',
+    cursor: 'pointer',
+    textAlign: 'left',
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontWeight: 600,
+  },
+  hierarchyChevron: {
+    flexShrink: 0,
+    color: 'rgba(255,255,255,0.4)',
+  },
+  hierarchyGroupLabel: {
+    whiteSpace: 'nowrap',
+  },
   gridShell: {
-    flex: 1,
     minHeight: 420,
     display: 'grid',
     gridTemplateColumns: '1fr 1px 1fr',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 14,
-    overflow: 'hidden',
     background: '#181818',
   },
   gridPane: {
     display: 'flex',
     flexDirection: 'column',
     minWidth: 0,
+    overflowX: 'auto',
   },
   gridDivider: {
     background: 'rgba(255,255,255,0.1)',
@@ -2330,6 +2573,7 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
+    whiteSpace: 'nowrap',
   },
   gridRow: {
     display: 'grid',
@@ -2360,13 +2604,17 @@ const styles: Record<string, CSSProperties> = {
   gridCellText: {
     display: 'flex',
     alignItems: 'center',
-    padding: '0 12px',
+    paddingTop: 0,
+    paddingRight: 12,
+    paddingBottom: 0,
+    paddingLeft: 12,
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
     color: 'rgba(255,255,255,0.74)',
     fontSize: 12,
     fontFamily: 'monospace',
     lineHeight: '18px',
+    whiteSpace: 'nowrap',
   },
   gridCellTextMuted: {
     display: 'flex',
@@ -2379,6 +2627,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontFamily: 'monospace',
     lineHeight: '18px',
+    whiteSpace: 'nowrap',
   },
   schemaEditorShell: {
     position: 'relative',
@@ -2552,40 +2801,16 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     background: 'rgba(255,120,117,0.04)',
   },
-  modalOverlay: {
-    position: 'fixed',
-    inset: 0,
-    zIndex: 1000,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    background: 'rgba(0,0,0,0.58)',
-  },
-  joinModal: {
-    width: 'min(1400px, calc(100vw - 48px))',
-    height: 'min(760px, calc(100vh - 48px))',
+  joinsBody: {
     display: 'flex',
     flexDirection: 'column',
     gap: 16,
-    overflow: 'hidden',
-    border: '1px solid rgba(255,255,255,0.12)',
-    borderRadius: 8,
-    background: '#1b1b1b',
-    boxShadow: '0 22px 60px rgba(0,0,0,0.45)',
-    padding: 18,
   },
-  joinModalHeader: {
+  joinControlsRow: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 16,
-  },
-  joinModalTitle: {
-    color: 'rgba(255,255,255,0.86)',
-    fontSize: 16,
-    fontWeight: 700,
-    flexShrink: 0,
+    flexWrap: 'wrap',
   },
   joinScopeRow: {
     display: 'flex',
@@ -2637,22 +2862,9 @@ const styles: Record<string, CSSProperties> = {
     background: '#1f1f1f',
     boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
   },
-  joinModalCloseButton: {
-    width: 28,
-    height: 28,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: 'none',
-    borderRadius: 4,
-    background: 'transparent',
-    color: 'rgba(255,255,255,0.55)',
-    cursor: 'pointer',
-  },
   joinDiagram: {
     position: 'relative',
-    flex: '1 1 auto',
-    minHeight: 0,
+    height: 480,
     minWidth: 0,
     border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: 6,
@@ -2830,11 +3042,6 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.36)',
     fontSize: 11,
     fontFamily: 'monospace',
-  },
-  joinModalFooter: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
   },
   joinBottomPanel: {
     display: 'flex',

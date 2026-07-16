@@ -1,5 +1,5 @@
 import { Tooltip } from 'antd';
-import { AppstoreOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, SettingOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PanelType } from '../types/panel';
@@ -11,6 +11,7 @@ interface AppSidebarProps {
 
 const NAV_ITEMS: { key: NonNullable<PanelType>; icon: React.ReactNode; label: string }[] = [
   { key: 'services', icon: <AppstoreOutlined />, label: 'Services' },
+  { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
 ];
 
 interface NavBtnProps {
@@ -30,11 +31,11 @@ function NavBtn({ item, isActive, onToggle }: NavBtnProps) {
         onMouseLeave={() => setHovered(false)}
         style={{
           ...styles.iconBtn,
-          color: isActive ? '#4096ff' : 'rgba(255,255,255,0.45)',
+          color: isActive ? 'var(--accent)' : 'var(--text-tertiary)',
           background: isActive
-            ? 'rgba(64,150,255,0.15)'
+            ? 'var(--accent-subtle)'
             : hovered
-            ? 'rgba(255,255,255,0.08)'
+            ? 'var(--bg-subtle)'
             : 'transparent',
         }}
       >
@@ -63,12 +64,12 @@ const styles: Record<string, CSSProperties> = {
   sidebar: {
     width: 64,
     flexShrink: 0,
-    background: '#1a1a1a',
-    borderRight: '1px solid #2a2a2a',
+    background: 'var(--bg-surface)',
+    borderRight: '1px solid var(--border-subtle)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    paddingTop: 12,
+    paddingTop: 'var(--sp-3)',
     gap: 6,
   },
   iconBtn: {
@@ -78,7 +79,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
-    borderRadius: 8,
+    borderRadius: 'var(--r-md)',
     fontSize: 22,
     transition: 'background 0.15s, color 0.15s',
   },

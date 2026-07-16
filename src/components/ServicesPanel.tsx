@@ -383,7 +383,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   ];
 
   const getConnectionMenuItems = () => [
-    { key: 'delete', label: <span style={{ color: '#ff4d4f' }}>Delete</span> },
+    { key: 'delete', label: <span style={{ color: 'var(--status-critical)' }}>Delete</span> },
   ];
 
   const toggleFavourite = (serviceId: string) => {
@@ -407,7 +407,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
         : 'Add to Favourites',
     },
     { type: 'divider' as const },
-    { key: 'delete', label: <span style={{ color: '#ff4d4f' }}>Delete</span> },
+    { key: 'delete', label: <span style={{ color: 'var(--status-critical)' }}>Delete</span> },
   ];
 
   const handleMenuClick = (key: string, service: ServiceResponse) => {
@@ -426,8 +426,8 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
         cancelButtonProps: {
           type: 'text',
           style: {
-            color: 'rgba(255,255,255,0.45)',
-            border: '1px solid rgba(255,255,255,0.45)',
+            color: 'var(--text-tertiary)',
+            border: '1px solid var(--border-strong)',
             boxShadow: 'none',
           },
         },
@@ -450,8 +450,8 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
       cancelButtonProps: {
         type: 'text',
         style: {
-          color: 'rgba(255,255,255,0.45)',
-          border: '1px solid rgba(255,255,255,0.45)',
+          color: 'var(--text-tertiary)',
+          border: '1px solid var(--border-strong)',
           boxShadow: 'none',
         },
       },
@@ -486,7 +486,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
         <div
           style={{
             ...styles.serviceItem,
-            background: isExpanded ? 'rgba(255,255,255,0.05)' : undefined,
+            background: isExpanded ? 'var(--bg-subtle)' : undefined,
           }}
           onClick={() => handleServiceClick(id)}
         >
@@ -744,7 +744,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                           });
                         }}
                       >
-                        <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[ep.httpMethod] ?? 'rgba(255,255,255,0.5)' }}>{ep.httpMethod}</span>
+                        <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[ep.httpMethod] ?? 'var(--text-tertiary)' }}>{ep.httpMethod}</span>
                         <span style={styles.endpointPath}>{ep.path}</span>
                       </button>
                     ))
@@ -845,33 +845,33 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'center',
   },
   emptyText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.2)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-disabled)',
   },
   list: {
     display: 'flex',
     flexDirection: 'column',
-    padding: '8px 0',
+    padding: 'var(--sp-2) 0',
     overflowY: 'auto',
   },
   serviceItem: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '10px 12px 10px 16px',
+    padding: '10px 12px 10px var(--sp-4)',
     cursor: 'pointer',
-    borderBottom: '1px solid #232323',
+    borderBottom: '1px solid var(--border-subtle)',
     transition: 'background 0.15s',
   },
   chevron: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.25)',
+    color: 'var(--text-tertiary)',
     flexShrink: 0,
     transition: 'transform 0.2s',
   },
   serviceIcon: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.35)',
+    color: 'var(--text-secondary)',
     flexShrink: 0,
   },
   serviceInfo: {
@@ -887,97 +887,94 @@ const styles: Record<string, CSSProperties> = {
     gap: 5,
   },
   serviceName: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.75)',
-    fontWeight: 500,
+    font: 'var(--text-base-md)',
+    color: 'var(--text-primary)',
   },
   starIcon: {
     fontSize: 10,
-    color: 'rgba(250,200,50,0.7)',
+    color: 'var(--status-warning)',
   },
   serviceDesc: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.3)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-tertiary)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   },
   dotsBtn: {
-    color: 'rgba(255,255,255,0.25)',
+    color: 'var(--text-tertiary)',
     flexShrink: 0,
   },
   subSections: {
-    borderBottom: '1px solid #232323',
-    background: 'rgba(0,0,0,0.15)',
+    borderBottom: '1px solid var(--border-subtle)',
+    background: 'var(--bg-canvas)',
   },
   subSectionHeader: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '8px 16px 8px 24px',
+    padding: '8px var(--sp-4) 8px 24px',
     cursor: 'pointer',
-    borderTop: '1px solid #1e1e1e',
+    borderTop: '1px solid var(--border-subtle)',
     transition: 'background 0.15s',
   },
   subChevron: {
     fontSize: 9,
-    color: 'rgba(255,255,255,0.2)',
+    color: 'var(--text-disabled)',
     flexShrink: 0,
     transition: 'transform 0.2s',
   },
   subSectionIcon: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.3)',
+    color: 'var(--text-tertiary)',
     flexShrink: 0,
   },
   subSectionTitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    font: 'var(--text-base-md)',
+    color: 'var(--text-secondary)',
     flex: 1,
-    fontWeight: 500,
   },
   subSectionContent: {
-    padding: '10px 16px 10px 48px',
-    borderTop: '1px solid #1e1e1e',
+    padding: '10px var(--sp-4) 10px 48px',
+    borderTop: '1px solid var(--border-subtle)',
     display: 'flex',
     flexDirection: 'column',
     gap: 4,
   },
   subSectionAddBtn: {
-    color: 'rgba(255,255,255,0.25)',
+    color: 'var(--text-tertiary)',
     flexShrink: 0,
   },
   subSectionMenuBtn: {
-    color: 'rgba(255,255,255,0.25)',
+    color: 'var(--text-tertiary)',
     flexShrink: 0,
   },
   emptyHint: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.2)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-disabled)',
     fontStyle: 'italic',
   },
   errorHint: {
-    fontSize: 11,
-    color: '#ff7875',
+    font: 'var(--text-sm)',
+    color: 'var(--status-critical)',
     fontStyle: 'italic',
   },
   databaseCard: {
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
-    padding: '10px 12px',
-    borderRadius: 10,
-    border: '1px solid rgba(255,255,255,0.08)',
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
+    padding: 'var(--sp-3)',
+    borderRadius: 'var(--r-lg)',
+    border: '1px solid var(--border-subtle)',
+    background: 'var(--bg-subtle)',
   },
   databaseTypeBadge: {
     alignSelf: 'flex-start',
     padding: '3px 8px',
-    borderRadius: 999,
-    background: 'rgba(255,255,255,0.08)',
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 10,
-    fontWeight: 700,
+    borderRadius: 'var(--r-full)',
+    background: 'var(--bg-subtle-strong)',
+    color: 'var(--text-secondary)',
+    font: 'var(--text-micro)',
     letterSpacing: '0.06em',
   },
   databaseDetails: {
@@ -992,19 +989,18 @@ const styles: Record<string, CSSProperties> = {
     gap: 12,
   },
   databaseLabel: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.35)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-tertiary)',
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
   },
   databaseValue: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.72)',
-    fontFamily: 'monospace',
+    font: 'var(--text-mono)',
+    color: 'var(--text-secondary)',
     textAlign: 'right',
   },
   nestedSection: {
-    borderTop: '1px solid rgba(255,255,255,0.08)',
+    borderTop: '1px solid var(--border-subtle)',
     paddingTop: 10,
   },
   nestedSectionHeader: {
@@ -1015,19 +1011,18 @@ const styles: Record<string, CSSProperties> = {
   },
   nestedChevron: {
     fontSize: 9,
-    color: 'rgba(255,255,255,0.2)',
+    color: 'var(--text-disabled)',
     flexShrink: 0,
     transition: 'transform 0.2s',
   },
   nestedSectionIcon: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.28)',
+    color: 'var(--text-tertiary)',
     flexShrink: 0,
   },
   nestedSectionTitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.56)',
-    fontWeight: 500,
+    font: 'var(--text-base-md)',
+    color: 'var(--text-secondary)',
   },
   nestedSectionContent: {
     display: 'flex',
@@ -1040,9 +1035,9 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: 'column',
     gap: 6,
     padding: '9px 10px',
-    borderRadius: 8,
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 'var(--r-md)',
+    background: 'var(--bg-subtle)',
+    border: '1px solid var(--border-subtle)',
   },
   connectionMainRow: {
     display: 'flex',
@@ -1058,22 +1053,22 @@ const styles: Record<string, CSSProperties> = {
   },
   connectionModeBadge: {
     padding: '2px 7px',
-    borderRadius: 999,
-    background: 'rgba(255,255,255,0.08)',
-    color: 'rgba(255,255,255,0.64)',
+    borderRadius: 'var(--r-full)',
+    background: 'var(--bg-subtle-strong)',
+    color: 'var(--text-secondary)',
     fontSize: 10,
     fontWeight: 600,
   },
   connectionActiveBadge: {
     padding: '2px 7px',
-    borderRadius: 999,
-    background: 'rgba(73,204,144,0.14)',
-    color: '#73d13d',
+    borderRadius: 'var(--r-full)',
+    background: 'var(--status-good-subtle)',
+    color: 'var(--status-good)',
     fontSize: 10,
     fontWeight: 700,
   },
   connectionMenuBtn: {
-    color: 'rgba(255,255,255,0.35)',
+    color: 'var(--text-secondary)',
     flexShrink: 0,
   },
   connectionRow: {
@@ -1088,21 +1083,19 @@ const styles: Record<string, CSSProperties> = {
     gap: 4,
   },
   connectionLabel: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.35)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-tertiary)',
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
   },
   connectionValue: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.72)',
-    fontFamily: 'monospace',
+    font: 'var(--text-mono)',
+    color: 'var(--text-secondary)',
     textAlign: 'right',
   },
   connectionStringValue: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.62)',
-    fontFamily: 'monospace',
+    font: 'var(--text-mono)',
+    color: 'var(--text-secondary)',
     wordBreak: 'break-all',
   },
   endpointItem: {
@@ -1114,10 +1107,10 @@ const styles: Record<string, CSSProperties> = {
     border: 'none',
     background: 'transparent',
     textAlign: 'left',
-    borderRadius: 6,
+    borderRadius: 'var(--r-sm)',
   },
   endpointItemSelected: {
-    background: 'rgba(64,150,255,0.14)',
+    background: 'var(--accent-subtle)',
   },
   endpointMethod: {
     fontSize: 10,
@@ -1127,8 +1120,7 @@ const styles: Record<string, CSSProperties> = {
     width: 42,
   },
   endpointPath: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.55)',
-    fontFamily: 'monospace',
+    font: 'var(--text-mono)',
+    color: 'var(--text-secondary)',
   },
 };

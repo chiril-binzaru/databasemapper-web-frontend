@@ -214,7 +214,7 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
       centered
       footer={null}
       styles={{
-        container: { padding: 0, background: '#2b2b2b', borderRadius: 8, maxHeight: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' },
+        container: { padding: 0, background: 'var(--bg-surface-raised)', borderRadius: 'var(--r-md)', maxHeight: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' },
         header: { padding: '16px 48px 12px 20px', background: 'transparent', borderBottom: 'none', marginBottom: 0, flexShrink: 0 },
         body: { padding: 0, overflowY: 'auto' },
       }}
@@ -223,9 +223,9 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
         componentSize="large"
         theme={{
           components: {
-            Input:  { hoverBorderColor: '#424242', activeShadow: 'none' },
-            Select: { hoverBorderColor: '#424242', activeOutlineColor: 'transparent' },
-            Radio:  { colorBorder: 'white' },
+            Input:  { hoverBorderColor: 'var(--border-strong)', activeShadow: 'none' },
+            Select: { hoverBorderColor: 'var(--border-strong)', activeOutlineColor: 'transparent' },
+            Radio:  { colorBorder: 'var(--border-strong)' },
           },
         }}
       >
@@ -382,9 +382,8 @@ export default function NewConnectionModal({ open, database, onClose, onAdd }: N
 
 const styles: Record<string, CSSProperties> = {
   modalTitle: {
-    fontSize: 15,
-    fontWeight: 600,
-    color: 'rgba(255,255,255,0.85)',
+    font: 'var(--text-lg)',
+    color: 'var(--text-primary)',
   },
   body: {
     display: 'flex',
@@ -400,9 +399,8 @@ const styles: Record<string, CSSProperties> = {
     padding: '12px 20px 8px',
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: 'rgba(255,255,255,0.65)',
+    font: 'var(--text-xs)',
+    color: 'var(--text-secondary)',
     textTransform: 'uppercase',
     letterSpacing: '0.07em',
   },
@@ -418,8 +416,8 @@ const styles: Record<string, CSSProperties> = {
     gap: 4,
   },
   label: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
+    font: 'var(--text-sm)',
+    color: 'var(--text-tertiary)',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
     userSelect: 'none',
@@ -431,17 +429,17 @@ const styles: Record<string, CSSProperties> = {
   },
   divider: {
     height: 1,
-    background: '#3a3a3a',
+    background: 'var(--border-default)',
     margin: '4px 20px',
   },
   errorText: {
-    fontSize: 11,
-    color: '#ff4d4f',
+    font: 'var(--text-sm)',
+    color: 'var(--status-critical)',
     padding: '0 20px 12px',
   },
   footerSeparator: {
     height: 1,
-    background: 'rgba(255,255,255,0.06)',
+    background: 'var(--border-subtle)',
   },
   footer: {
     display: 'flex',
@@ -451,14 +449,14 @@ const styles: Record<string, CSSProperties> = {
     padding: '14px 20px',
   },
   btnTest: {
-    color: 'rgba(255,255,255,0.5)',
-    border: '1px solid rgba(255,255,255,0.5)',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-strong)',
   },
   btnPrimary: {
     boxShadow: 'none',
   },
   btnCancel: {
-    color: 'rgba(255,255,255,0.45)',
-    border: '1px solid rgba(255,255,255,0.45)',
+    color: 'var(--text-tertiary)',
+    border: '1px solid var(--border-strong)',
   },
 };

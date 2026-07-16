@@ -1,1 +1,1 @@
-export type PanelType = 'services' | null;
+export type PanelType = 'services' | 'settings' | null;
