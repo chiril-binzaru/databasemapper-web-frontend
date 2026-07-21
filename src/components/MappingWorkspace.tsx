@@ -11,6 +11,7 @@ import type {
   MappingFieldEntry,
 } from '../services/endpointsApi';
 import type { DatabaseResponse, DbColumnResponse } from '../services/databaseApi';
+import GlassSaveButton from './GlassSaveButton';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -2129,15 +2130,14 @@ export default function MappingWorkspace({
               <span style={styles.canvasSubtitle}>{activeTab.serviceName}</span>
             </div>
             <div style={styles.saveStatusGroup}>
-              {activeTab.saveStatus === 'saving' && (
-                <span style={styles.saveStatusText}>Saving...</span>
-              )}
               {activeTab.saveStatus === 'error' && (
                 <span style={styles.saveStatusError}>{activeTab.saveError ?? 'Save failed.'}</span>
               )}
-              {activeTab.isDirty && activeTab.saveStatus !== 'saving' && (
-                <span style={styles.saveStatusText}>Unsaved changes</span>
-              )}
+              <GlassSaveButton
+                onClick={() => safeOnSaveMapping(activeTab.endpointId)}
+                disabled={!activeTab.isDirty}
+                saving={activeTab.saveStatus === 'saving'}
+              />
             </div>
           </div>
 
@@ -2360,7 +2360,7 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    minWidth: 140,
+    gap: 12,
   },
   saveStatusText: {
     color: 'rgba(255,255,255,0.42)',
