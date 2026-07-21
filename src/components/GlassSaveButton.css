@@ -1,0 +1,221 @@
+/* Thick acrylic-glass "Save changes" button — toolbar scale.
+   Layered rim + interior for real depth (not a border/shadow trick):
+   .glass-save-btn is the glass rim material, .glass-save-btn__interior
+   is the darker inset body. Only `transform` animates on hover/active;
+   glow/brighten effects cross-fade via opacity so they stay compositor-only. */
+
+.glass-save-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 48px;
+  padding: 6px;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+  font-family: var(--font-sans);
+
+  background:
+    radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.35) 9%, transparent 22%),
+    radial-gradient(circle at 90% 12%, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 16%),
+    radial-gradient(ellipse 70% 55% at 50% 108%, rgba(64, 224, 255, 0.95) 0%, rgba(30, 170, 220, 0.5) 30%, transparent 62%),
+    linear-gradient(
+      155deg,
+      rgba(214, 240, 255, 0.55) 0%,
+      rgba(146, 196, 220, 0.3) 22%,
+      rgba(48, 84, 108, 0.38) 46%,
+      rgba(18, 40, 56, 0.55) 70%,
+      rgba(20, 52, 68, 0.6) 100%
+    );
+
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.5),
+    inset 0 -1.5px 1px rgba(0, 0, 0, 0.35),
+    0 1px 2px rgba(0, 4, 9, 0.4),
+    0 6px 12px -4px rgba(0, 8, 16, 0.55),
+    0 12px 20px -8px rgba(0, 12, 22, 0.6),
+    0 10px 22px -6px rgba(10, 200, 255, 0.2);
+
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.glass-save-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.16) 6%, transparent 13%);
+  mix-blend-mode: screen;
+  opacity: 0.9;
+}
+
+.glass-save-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  -webkit-mask: linear-gradient(180deg, #000 0%, transparent 30%);
+  mask: linear-gradient(180deg, #000 0%, transparent 30%);
+}
+
+.glass-save-btn__glow {
+  position: absolute;
+  inset: -2px;
+  z-index: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
+  transition: opacity 220ms ease;
+  box-shadow:
+    0 2px 3px rgba(0, 4, 9, 0.45),
+    0 8px 14px -4px rgba(0, 8, 16, 0.6),
+    0 16px 26px -8px rgba(0, 12, 22, 0.65),
+    0 12px 28px -6px rgba(10, 210, 255, 0.32);
+}
+
+.glass-save-btn:hover .glass-save-btn__glow {
+  opacity: 1;
+}
+
+.glass-save-btn__interior {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 0 18px 0 0;
+  border-radius: 999px;
+  overflow: hidden;
+
+  background:
+    radial-gradient(ellipse 95% 65% at 50% 122%, rgba(0, 214, 255, 0.85) 0%, rgba(0, 175, 230, 0.4) 24%, transparent 52%),
+    linear-gradient(180deg, #0f2233 0%, #071523 14%, #030a12 38%, #02070d 62%, #030c15 100%);
+
+  box-shadow:
+    inset 0 1px 0 rgba(160, 220, 255, 0.14),
+    inset 0 -14px 18px -6px rgba(0, 218, 255, 0.55),
+    inset 0 0 22px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.glass-save-btn__interior::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02) 45%, transparent 75%);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.glass-save-btn:hover .glass-save-btn__interior::before {
+  opacity: 1;
+}
+
+.glass-save-btn__interior::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: -20%;
+  left: -10%;
+  width: 90%;
+  height: 65%;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.1), transparent 55%);
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+.glass-save-btn__icon {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  padding: 3px;
+
+  background:
+    radial-gradient(circle at 22% 20%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.25) 10%, transparent 26%),
+    radial-gradient(ellipse 70% 50% at 50% 112%, rgba(60, 222, 255, 0.9), transparent 60%),
+    linear-gradient(155deg, rgba(200, 232, 250, 0.5), rgba(70, 110, 135, 0.32) 40%, rgba(14, 32, 45, 0.55) 100%);
+
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.glass-save-btn__icon-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 128%, rgba(0, 214, 255, 0.7), transparent 55%),
+    radial-gradient(circle at 36% 30%, #123449, #030a12 72%);
+
+  box-shadow:
+    inset 0 1px 0 rgba(180, 230, 255, 0.18),
+    inset 0 -4px 6px -2px rgba(0, 210, 255, 0.55),
+    inset 0 0 8px rgba(0, 0, 0, 0.65);
+}
+
+.glass-save-btn__icon-inner svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 1.5px rgba(140, 230, 255, 0.55)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
+}
+
+.glass-save-btn__label {
+  position: relative;
+  z-index: 2;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 14px rgba(120, 220, 255, 0.25);
+}
+
+.glass-save-btn:hover {
+  transform: translateY(-1px);
+}
+
+.glass-save-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.glass-save-btn:focus-visible {
+  outline: 2px solid rgba(90, 220, 255, 0.85);
+  outline-offset: 3px;
+}
+
+.glass-save-btn:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+  opacity: 0.5;
+  filter: saturate(0.6);
+}
