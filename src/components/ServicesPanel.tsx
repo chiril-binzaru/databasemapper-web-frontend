@@ -19,6 +19,7 @@ import { deleteDatabaseConnection, getDatabaseConnections } from '../services/co
 import type { ConnectionItem } from '../services/connectionsApi';
 import NewConnectionModal from './NewConnectionModal';
 import NewEndpointModal from './NewEndpointModal';
+import EditServiceModal from './EditServiceModal';
 import SyncEndpointsModal from './SyncEndpointsModal';
 import { getServiceEndpoints, replaceServiceEndpoints, syncServiceEndpoints } from '../services/endpointsApi';
 import type { EndpointItem } from '../services/endpointsApi';
@@ -55,6 +56,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   const [selectedEndpointId, setSelectedEndpointId] = useState<number | null>(null);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
+  const [editingService, setEditingService] = useState<ServiceResponse | null>(null);
   const [connectionModalDatabase, setConnectionModalDatabase] = useState<DatabaseResponse | null>(null);
   const [databaseByService, setDatabaseByService] = useState<Record<number, DatabaseResponse | null | undefined>>({});
   const [databaseFetchedAtByService, setDatabaseFetchedAtByService] = useState<Record<number, number>>({});
@@ -411,6 +413,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   ];
 
   const handleMenuClick = (key: string, service: ServiceResponse) => {
+    if (key === 'edit') setEditingService(service);
     if (key === 'favourite') toggleFavourite(String(service.serviceId));
     if (key === 'delete') {
       modal.confirm({
@@ -785,6 +788,22 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
           onAdd={endpoints => {
             setEndpointsByService(prev => ({ ...prev, [endpointModalServiceId]: endpoints }));
             setEndpointModalServiceId(null);
+          }}
+        />
+      )}
+
+      {editingService !== null && (
+        <EditServiceModal
+          open
+          service={editingService}
+          onClose={() => setEditingService(null)}
+          onSave={updatedService => {
+            queryClient.setQueryData<ServiceResponse[]>(['services'], prev =>
+              (prev ?? []).map(item =>
+                item.serviceId === updatedService.serviceId ? updatedService : item,
+              ),
+            );
+            setEditingService(null);
           }}
         />
       )}
