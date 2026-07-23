@@ -11,6 +11,121 @@
     }
   ],
   "paths": {
+    "/api/v1/services/{serviceId}": {
+      "put": {
+        "tags": [
+          "service-controller"
+        ],
+        "summary": "Update an existing service",
+        "operationId": "update",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Service updated",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found, or database not found for the provided databaseId",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "service-controller"
+        ],
+        "summary": "Delete a service by ID",
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Service deleted"
+          },
+          "404": {
+            "description": "Service not found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/services/{serviceId}/endpoints": {
       "get": {
         "tags": [
@@ -414,7 +529,7 @@
           "database-connection-controller"
         ],
         "summary": "Update a connection",
-        "operationId": "update",
+        "operationId": "update_1",
         "parameters": [
           {
             "name": "databaseId",
@@ -493,7 +608,7 @@
           "database-connection-controller"
         ],
         "summary": "Delete a connection",
-        "operationId": "delete",
+        "operationId": "delete_1",
         "parameters": [
           {
             "name": "databaseId",
@@ -1634,55 +1749,79 @@
           }
         }
       }
-    },
-    "/api/v1/services/{serviceId}": {
-      "delete": {
-        "tags": [
-          "service-controller"
-        ],
-        "summary": "Delete a service by ID",
-        "operationId": "delete_1",
-        "parameters": [
-          {
-            "name": "serviceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Service deleted"
-          },
-          "404": {
-            "description": "Service not found",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected error",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
     "schemas": {
+      "ServiceRequest": {
+        "type": "object",
+        "properties": {
+          "databaseId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serviceName": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 0
+          },
+          "serviceBaseUrl": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 0
+          },
+          "swaggerEndpoint": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 0
+          }
+        },
+        "required": [
+          "serviceBaseUrl",
+          "serviceName"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "error": {
+            "type": "string"
+          },
+          "errorMessage": {
+            "type": "string"
+          }
+        }
+      },
+      "ServiceResponse": {
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "databaseId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "serviceBaseUrl": {
+            "type": "string"
+          },
+          "swaggerEndpoint": {
+            "type": "string"
+          }
+        }
+      },
       "EndpointReplaceRequest": {
         "type": "object",
         "properties": {
@@ -1710,25 +1849,6 @@
           "httpMethod",
           "path"
         ]
-      },
-      "ErrorResponse": {
-        "type": "object",
-        "properties": {
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "error": {
-            "type": "string"
-          },
-          "errorMessage": {
-            "type": "string"
-          }
-        }
       },
       "EndpointResponse": {
         "type": "object",
@@ -1976,56 +2096,6 @@
           },
           "active": {
             "type": "boolean"
-          }
-        }
-      },
-      "ServiceRequest": {
-        "type": "object",
-        "properties": {
-          "databaseId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "serviceName": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 0
-          },
-          "serviceBaseUrl": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 0
-          },
-          "swaggerEndpoint": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 0
-          }
-        },
-        "required": [
-          "serviceBaseUrl",
-          "serviceName"
-        ]
-      },
-      "ServiceResponse": {
-        "type": "object",
-        "properties": {
-          "serviceId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "databaseId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "serviceName": {
-            "type": "string"
-          },
-          "serviceBaseUrl": {
-            "type": "string"
-          },
-          "swaggerEndpoint": {
-            "type": "string"
           }
         }
       },
