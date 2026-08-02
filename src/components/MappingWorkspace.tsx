@@ -12,6 +12,7 @@ import type {
 } from '../services/endpointsApi';
 import type { DatabaseResponse, DbColumnResponse } from '../services/databaseApi';
 import GlassSaveButton from './GlassSaveButton';
+import IconHoverCircle from './IconHoverCircle';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -54,6 +55,7 @@ interface MappingWorkspaceProps {
 }
 
 const EMPTY_GRID_ROWS = 12;
+const DATABASE_ROW_HEIGHT = 40;
 
 const JOIN_OPERATOR_OPTIONS: Array<{ label: string; value: JoinConditionPairDto['operator'] }> = [
   { label: '=', value: 'EQ' },
@@ -246,6 +248,8 @@ function getJoinColor(joinIndex: number): string {
   return `hsl(${hue}, 68%, 60%)`;
 }
 
+type SchemaCellMode = 'plain' | 'selected' | 'editing';
+
 function SchemaCell({
   value,
   disabled,
@@ -254,6 +258,10 @@ function SchemaCell({
   onOpenDropdown,
   suffix,
   variant = 'plain',
+  showFillHandle = false,
+  onFillHandleMouseDown,
+  fillPreview = false,
+  optionsLoading = false,
 }: {
   value: string;
   disabled: boolean;
@@ -262,211 +270,282 @@ function SchemaCell({
   onOpenDropdown?: () => void;
   suffix?: ReactNode;
   variant?: 'plain' | 'outlined';
+  showFillHandle?: boolean;
+  onFillHandleMouseDown?: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  fillPreview?: boolean;
+  optionsLoading?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [mode, setMode] = useState<SchemaCellMode>('plain');
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
+  const [editText, setEditText] = useState('');
   const [hoveredOptionValue, setHoveredOptionValue] = useState<string | null>(null);
+  const [arrowHovered, setArrowHovered] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
-  const editorInputRef = useRef<HTMLInputElement | null>(null);
-  const visibleOptions = searchValue
-    ? options.filter(option => option.label.toLowerCase().includes(searchValue.toLowerCase()))
-    : options;
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const cellRef = useRef<HTMLDivElement | null>(null);
+
   const displayValue = options.find(option => option.value === value)?.label ?? value;
+  const isInvalid = value !== '' && !optionsLoading && !options.some(option => option.value === value);
+  const visibleOptions = mode === 'editing' && editText
+    ? options.filter(option => option.label.toLowerCase().includes(editText.toLowerCase()))
+    : options;
 
-  const startEditing = (openDropdown = false) => {
-    if (openDropdown) {
-      onOpenDropdown?.();
-    }
-
-    setSearchValue(displayValue);
-    setEditing(true);
-    setDropdownOpen(openDropdown);
-  };
-
-  const stopEditing = () => {
+  const clearBlurTimeout = () => {
     if (blurTimeoutRef.current !== null) {
       window.clearTimeout(blurTimeoutRef.current);
       blurTimeoutRef.current = null;
     }
-    setEditing(false);
+  };
+
+  const closeDropdown = () => {
     setDropdownOpen(false);
-    setSearchValue('');
     setHoveredOptionValue(null);
   };
 
-  useEffect(() => {
-    return () => {
-      if (blurTimeoutRef.current !== null) {
-        window.clearTimeout(blurTimeoutRef.current);
-      }
-    };
-  }, []);
+  const deselect = () => {
+    clearBlurTimeout();
+    setMode('plain');
+    closeDropdown();
+  };
 
+  const enterSelected = () => {
+    clearBlurTimeout();
+    setMode('selected');
+  };
+
+  const enterEditing = () => {
+    clearBlurTimeout();
+    setEditText(displayValue);
+    setDropdownOpen(false);
+    setMode('editing');
+  };
+
+  const commitEdit = () => {
+    const text = editorRef.current?.textContent ?? editText;
+    onChange(text);
+    setMode('plain');
+    closeDropdown();
+    setEditText('');
+  };
+
+  const cancelEdit = () => {
+    setMode('selected');
+    closeDropdown();
+    setEditText('');
+  };
+
+  const commitOption = (optionValue: string) => {
+    onChange(optionValue);
+    setMode('plain');
+    closeDropdown();
+    setEditText('');
+  };
+
+  useEffect(() => () => clearBlurTimeout(), []);
+
+  // Entering "selected" doesn't always come with native DOM focus on the
+  // container (e.g. cancelling out of edit mode moves focus off the
+  // now-unmounted editable element instead). Re-focusing here keeps the
+  // blur-to-deselect/close-dropdown behavior working from every path.
   useEffect(() => {
-    if (editing) {
-      setSearchValue(displayValue);
+    if (mode === 'selected') {
+      cellRef.current?.focus();
     }
-  }, [displayValue, editing]);
+  }, [mode]);
 
   useLayoutEffect(() => {
-    if (editing && !disabled) {
-      const input = editorInputRef.current;
-
-      if (input) {
-        const caretPosition = input.value.length;
-        input.focus();
-        input.setSelectionRange(caretPosition, caretPosition);
-      }
+    if (mode !== 'editing' || disabled) {
+      return;
     }
-  }, [disabled, editing]);
 
-  if (editing && !disabled) {
-    return (
-      <div
-        style={{
-          ...styles.schemaEditorShell,
-          ...(variant === 'outlined' ? styles.schemaEditorShellOutlined : null),
-        }}
-      >
-        <input
-          ref={editorInputRef}
-          value={searchValue}
-          style={styles.schemaEditorInput}
-          spellCheck={false}
-          onChange={event => {
-            setSearchValue(event.target.value);
-            setDropdownOpen(true);
-          }}
-          onFocus={() => {
-            if (blurTimeoutRef.current !== null) {
-              window.clearTimeout(blurTimeoutRef.current);
-              blurTimeoutRef.current = null;
-            }
-          }}
-          onBlur={() => {
-            blurTimeoutRef.current = window.setTimeout(() => {
-              stopEditing();
-            }, 0);
-          }}
-          onKeyDown={event => {
-            if (event.key === 'Escape') {
-              stopEditing();
-            }
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
 
-            if (event.key === 'Enter') {
-              const matchingOption = visibleOptions[0];
+    editor.textContent = displayValue;
+    editor.focus();
 
-              if (matchingOption) {
-                onChange(matchingOption.value);
-              }
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    // Only re-run when entering/leaving edit mode, not on every keystroke —
+    // otherwise the caret/content would get reset while the user is typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, disabled]);
 
-              stopEditing();
-            }
-          }}
-        />
-        <button
-          type="button"
-          style={styles.schemaEditorArrowButton}
-          onMouseDown={event => {
-            event.preventDefault();
-          }}
-          onClick={() => {
-            const nextDropdownOpen = !dropdownOpen;
+  const handleArrowClick = () => {
+    if (disabled) {
+      return;
+    }
 
-            if (nextDropdownOpen) {
-              onOpenDropdown?.();
-            }
+    const nextOpen = !dropdownOpen;
+    if (nextOpen) {
+      onOpenDropdown?.();
+    }
+    setDropdownOpen(nextOpen);
 
-            setDropdownOpen(nextDropdownOpen);
-            editorInputRef.current?.focus();
-          }}
-        >
-          <ChevronDown size={14} strokeWidth={1.8} />
-        </button>
-        {dropdownOpen && visibleOptions.length > 0 && (
-          <div style={styles.schemaDropdown}>
-            {visibleOptions.map(option => (
-              <button
-                key={option.value}
-                type="button"
-                style={{
-                  ...styles.schemaDropdownOption,
-                  ...(option.value === value ? styles.schemaDropdownOptionSelected : null),
-                  ...(option.value === hoveredOptionValue ? styles.schemaDropdownOptionHovered : null),
-                }}
-                onMouseDown={event => {
-                  event.preventDefault();
-                }}
-                onMouseEnter={() => {
-                  setHoveredOptionValue(option.value);
-                }}
-                onMouseLeave={() => {
-                  setHoveredOptionValue(currentValue => currentValue === option.value ? null : currentValue);
-                }}
-                onClick={() => {
-                  onChange(option.value);
-                  stopEditing();
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
+    if (mode === 'plain') {
+      enterSelected();
+    } else if (mode === 'editing') {
+      editorRef.current?.focus();
+    }
+  };
 
   return (
     <div
+      ref={cellRef}
       role={disabled ? undefined : 'button'}
       tabIndex={disabled ? -1 : 0}
       style={{
         ...styles.schemaCellButton,
         ...(variant === 'outlined' ? styles.schemaCellButtonOutlined : null),
         ...(disabled ? styles.schemaCellButtonDisabled : null),
+        ...(mode === 'selected' ? styles.schemaCellButtonSelected : null),
+        ...(mode === 'editing' ? styles.schemaCellButtonEditing : null),
+        ...(fillPreview ? styles.schemaCellButtonFillPreview : null),
       }}
       onClick={() => {
-        if (!disabled) {
-          startEditing(false);
+        if (disabled || mode === 'editing') {
+          return;
         }
+        enterSelected();
+      }}
+      onDoubleClick={() => {
+        if (disabled) {
+          return;
+        }
+        enterEditing();
+      }}
+      onFocus={clearBlurTimeout}
+      onBlur={() => {
+        blurTimeoutRef.current = window.setTimeout(() => {
+          deselect();
+        }, 0);
       }}
       onKeyDown={event => {
-        if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
+        if (disabled || mode === 'editing') {
+          return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          startEditing(false);
+          enterEditing();
         }
       }}
     >
-      <span
-        style={{
-          ...styles.schemaCellLabel,
-          ...(value ? styles.schemaCellLabelFilled : styles.schemaCellLabelPlaceholder),
+      {mode === 'editing' && !disabled ? (
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          spellCheck={false}
+          style={styles.schemaEditorContentEditable}
+          onInput={event => {
+            setEditText(event.currentTarget.textContent ?? '');
+            setDropdownOpen(true);
+          }}
+          onPaste={event => {
+            event.preventDefault();
+            const text = event.clipboardData.getData('text/plain');
+            document.execCommand('insertText', false, text);
+          }}
+          onBlur={event => {
+            event.stopPropagation();
+            blurTimeoutRef.current = window.setTimeout(() => {
+              commitEdit();
+            }, 0);
+          }}
+          onFocus={event => {
+            event.stopPropagation();
+            clearBlurTimeout();
+          }}
+          onKeyDown={event => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              cancelEdit();
+            } else if (event.key === 'Enter') {
+              event.preventDefault();
+              commitEdit();
+            }
+          }}
+        />
+      ) : (
+        <span
+          style={{
+            ...styles.schemaCellLabel,
+            ...(value
+              ? (isInvalid ? styles.schemaCellLabelInvalid : styles.schemaCellLabelFilled)
+              : styles.schemaCellLabelPlaceholder),
+          }}
+        >
+          {displayValue}
+        </span>
+      )}
+      {suffix}
+      <button
+        type="button"
+        style={styles.schemaCellArrowButton}
+        tabIndex={-1}
+        onMouseDown={event => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onMouseEnter={() => setArrowHovered(true)}
+        onMouseLeave={() => setArrowHovered(false)}
+        onClick={event => {
+          event.stopPropagation();
+          handleArrowClick();
         }}
       >
-        {displayValue}
-      </span>
-      {suffix}
-      <span style={styles.schemaCellArrow}>
-        <button
-          type="button"
-          style={styles.schemaArrowButton}
-          tabIndex={-1}
+        <span
+          style={{
+            ...styles.schemaCellArrowHoverCircle,
+            ...(arrowHovered ? styles.schemaCellArrowHoverCircleActive : null),
+          }}
+        />
+        <ChevronDown size={14} strokeWidth={1.8} style={{ position: 'relative' }} />
+      </button>
+      {showFillHandle && mode === 'selected' && !disabled && (
+        <div
+          style={styles.schemaFillHandle}
           onMouseDown={event => {
             event.preventDefault();
             event.stopPropagation();
+            onFillHandleMouseDown?.(event);
           }}
-          onClick={event => {
-            event.stopPropagation();
-            if (!disabled) {
-              startEditing(true);
-            }
-          }}
-        >
-          <ChevronDown size={14} strokeWidth={1.8} />
-        </button>
-      </span>
+        />
+      )}
+      {dropdownOpen && visibleOptions.length > 0 && (
+        <div style={styles.schemaDropdown}>
+          {visibleOptions.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              style={{
+                ...styles.schemaDropdownOption,
+                ...(option.value === value ? styles.schemaDropdownOptionSelected : null),
+                ...(option.value === hoveredOptionValue ? styles.schemaDropdownOptionHovered : null),
+              }}
+              onMouseDown={event => {
+                event.preventDefault();
+              }}
+              onMouseEnter={() => {
+                setHoveredOptionValue(option.value);
+              }}
+              onMouseLeave={() => {
+                setHoveredOptionValue(currentValue => currentValue === option.value ? null : currentValue);
+              }}
+              onClick={() => commitOption(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -540,7 +619,9 @@ function ScopeSelect({
         }}
       >
         <span style={styles.schemaCellLabel}>{scopes[value]?.path ?? ''}</span>
-        <ChevronDown size={13} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+        <IconHoverCircle circleSize={24} style={{ flexShrink: 0 }}>
+          <ChevronDown size={13} strokeWidth={1.8} />
+        </IconHoverCircle>
       </button>
       {open && (
         <div style={styles.scopeSelectDropdown}>
@@ -1583,14 +1664,16 @@ function CollapsibleSection({
           aria-expanded={expanded}
           onClick={onToggleExpanded}
         >
-          <ChevronDown
-            size={14}
-            strokeWidth={2}
-            style={{
-              ...styles.sectionChevron,
-              transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-            }}
-          />
+          <IconHoverCircle circleSize={25}>
+            <ChevronDown
+              size={14}
+              strokeWidth={2}
+              style={{
+                ...styles.sectionChevron,
+                transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+              }}
+            />
+          </IconHoverCircle>
           <span style={styles.sectionTitle}>{title}</span>
         </button>
         {headerExtra}
@@ -1680,6 +1763,37 @@ function MappingGrid({
     }));
   }, [databaseRowCount, mapping, serviceRows]);
 
+  // Resolve options for schemas/tables restored from a persisted mapping so
+  // their SchemaCell dropdowns aren't left empty (which would otherwise make
+  // an already-valid value look invalid until the user interacts with it).
+  useEffect(() => {
+    const schemasToLoad = new Set<string>();
+    selectedSchemas.forEach(schemaName => {
+      if (schemaName && (tablesStatusBySchema[schemaName] ?? 'idle') === 'idle') {
+        schemasToLoad.add(schemaName);
+      }
+    });
+    schemasToLoad.forEach(schemaName => onLoadTables(endpointId, schemaName));
+
+    const tablesToLoad = new Set<string>();
+    selectedSchemas.forEach((schemaName, index) => {
+      const tableName = selectedTables[index] ?? '';
+      if (!schemaName || !tableName) {
+        return;
+      }
+      const tableKey = createTableKey(schemaName, tableName);
+      if ((columnsStatusByTable[tableKey] ?? 'idle') === 'idle') {
+        tablesToLoad.add(tableKey);
+      }
+    });
+    tablesToLoad.forEach(tableKey => {
+      const parsed = parseTableKey(tableKey);
+      if (parsed) {
+        onLoadColumns(endpointId, parsed.schemaName, parsed.tableName);
+      }
+    });
+  }, [selectedSchemas, selectedTables, tablesStatusBySchema, columnsStatusByTable, endpointId, onLoadTables, onLoadColumns]);
+
   const schemaOptions = schemas.map(schema => ({
     label: schema,
     value: schema,
@@ -1734,6 +1848,121 @@ function MappingGrid({
     });
   };
 
+  // Mirrors the five selection arrays so fill-drag can chain several per-row
+  // handler calls synchronously (within one mouseup) without each call
+  // reading stale state from the render closure.
+  const selectedArraysRef = useRef({
+    schemas: selectedSchemas,
+    tables: selectedTables,
+    columns: selectedColumns,
+    columnTypes: selectedColumnTypes,
+    primaryKeys: selectedPrimaryKeys,
+  });
+  selectedArraysRef.current = {
+    schemas: selectedSchemas,
+    tables: selectedTables,
+    columns: selectedColumns,
+    columnTypes: selectedColumnTypes,
+    primaryKeys: selectedPrimaryKeys,
+  };
+
+  const handleSchemaCellChange = (index: number, value: string) => {
+    const current = selectedArraysRef.current;
+    const nextSchemas = [...current.schemas];
+    const previousSchema = nextSchemas[index] ?? '';
+    nextSchemas[index] = value;
+
+    const nextTables = [...current.tables];
+    const nextColumns = [...current.columns];
+    const nextColumnTypes = [...current.columnTypes];
+    const nextPrimaryKeys = [...current.primaryKeys];
+    if (previousSchema !== value) {
+      nextTables[index] = '';
+      nextColumns[index] = '';
+      nextColumnTypes[index] = '';
+      nextPrimaryKeys[index] = false;
+    }
+
+    selectedArraysRef.current = {
+      schemas: nextSchemas,
+      tables: nextTables,
+      columns: nextColumns,
+      columnTypes: nextColumnTypes,
+      primaryKeys: nextPrimaryKeys,
+    };
+    setSelectedSchemas(nextSchemas);
+    setSelectedTables(nextTables);
+    setSelectedColumns(nextColumns);
+    setSelectedColumnTypes(nextColumnTypes);
+    setSelectedPrimaryKeys(nextPrimaryKeys);
+    emitMappingChange(nextSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
+
+    if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
+      onLoadTables(endpointId, value);
+    }
+  };
+
+  const handleTableCellChange = (index: number, value: string) => {
+    const current = selectedArraysRef.current;
+    const schemaForRow = current.schemas[index] ?? '';
+    const nextTables = [...current.tables];
+    const previousTable = nextTables[index] ?? '';
+    nextTables[index] = value;
+
+    const nextColumns = [...current.columns];
+    const nextColumnTypes = [...current.columnTypes];
+    const nextPrimaryKeys = [...current.primaryKeys];
+    if (previousTable !== value) {
+      nextColumns[index] = '';
+      nextColumnTypes[index] = '';
+      nextPrimaryKeys[index] = false;
+    }
+
+    selectedArraysRef.current = {
+      ...current,
+      tables: nextTables,
+      columns: nextColumns,
+      columnTypes: nextColumnTypes,
+      primaryKeys: nextPrimaryKeys,
+    };
+    setSelectedTables(nextTables);
+    setSelectedColumns(nextColumns);
+    setSelectedColumnTypes(nextColumnTypes);
+    setSelectedPrimaryKeys(nextPrimaryKeys);
+    emitMappingChange(current.schemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
+
+    if (schemaForRow && value && (columnsStatusByTable[createTableKey(schemaForRow, value)] ?? 'idle') === 'idle') {
+      onLoadColumns(endpointId, schemaForRow, value);
+    }
+  };
+
+  const handleColumnCellChange = (index: number, value: string) => {
+    const current = selectedArraysRef.current;
+    const schemaForRow = current.schemas[index] ?? '';
+    const tableForRow = current.tables[index] ?? '';
+    const tableKeyForRow = schemaForRow && tableForRow ? createTableKey(schemaForRow, tableForRow) : '';
+    const columnsForRow = tableKeyForRow ? (columnsByTable[tableKeyForRow] ?? []) : [];
+
+    const nextColumns = [...current.columns];
+    nextColumns[index] = value;
+    const columnInfo = columnsForRow.find(column => column.name === value);
+    const nextColumnTypes = [...current.columnTypes];
+    nextColumnTypes[index] = columnInfo?.dataType ?? '';
+    const nextPrimaryKeys = [...current.primaryKeys];
+    nextPrimaryKeys[index] = columnInfo?.primaryKey ?? false;
+
+    selectedArraysRef.current = {
+      ...current,
+      columns: nextColumns,
+      columnTypes: nextColumnTypes,
+      primaryKeys: nextPrimaryKeys,
+    };
+    setSelectedColumns(nextColumns);
+    setSelectedColumnTypes(nextColumnTypes);
+    setSelectedPrimaryKeys(nextPrimaryKeys);
+    emitMappingChange(current.schemas, current.tables, nextColumns, nextColumnTypes, nextPrimaryKeys);
+  };
+
   const scopes = useMemo(
     () => getScopesFromMapping(mapping, selectedSchemas, selectedTables, serviceRows),
     [mapping, selectedSchemas, selectedTables, serviceRows],
@@ -1746,6 +1975,117 @@ function MappingGrid({
     [serviceRows, viewMode, collapsedGroups],
   );
   const displayRowCount = Math.max(EMPTY_GRID_ROWS, displayRows.length);
+
+  // Maps each rendered database-grid row position to the row index used by
+  // selectedSchemas/selectedTables/... (null for group headers / trailing
+  // empty rows), so the fill-drag can resolve which rows it passed over.
+  const positionToRowIndex = useMemo(() => {
+    const map: Array<number | null> = [];
+    for (let position = 0; position < displayRowCount; position += 1) {
+      const displayRow = displayRows[position];
+      map.push(displayRow && displayRow.kind === 'leaf' ? (displayRow.rowIndex as number) : null);
+    }
+    return map;
+  }, [displayRows, displayRowCount]);
+
+  const [fillDrag, setFillDrag] = useState<{
+    column: 'schema' | 'table' | 'column';
+    sourceIndex: number;
+    sourceValue: string;
+    startPosition: number;
+    startClientY: number;
+    currentPosition: number;
+  } | null>(null);
+  const fillDragRef = useRef(fillDrag);
+  fillDragRef.current = fillDrag;
+  const positionToRowIndexRef = useRef(positionToRowIndex);
+  positionToRowIndexRef.current = positionToRowIndex;
+
+  const startFillDrag = (
+    column: 'schema' | 'table' | 'column',
+    position: number,
+    index: number,
+    value: string,
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.style.cursor = 'ns-resize';
+    setFillDrag({
+      column,
+      sourceIndex: index,
+      sourceValue: value,
+      startPosition: position,
+      startClientY: event.clientY,
+      currentPosition: position,
+    });
+  };
+
+  useEffect(() => {
+    const applyFillDrag = () => {
+      const drag = fillDragRef.current;
+      if (!drag) {
+        return;
+      }
+
+      const from = Math.min(drag.startPosition, drag.currentPosition);
+      const to = Math.max(drag.startPosition, drag.currentPosition);
+      const rowIndexMap = positionToRowIndexRef.current;
+
+      for (let position = from; position <= to; position += 1) {
+        const rowIndex = rowIndexMap[position];
+        if (rowIndex === null || rowIndex === undefined || rowIndex === drag.sourceIndex) {
+          continue;
+        }
+
+        if (drag.column === 'schema') {
+          handleSchemaCellChange(rowIndex, drag.sourceValue);
+        } else if (drag.column === 'table') {
+          handleTableCellChange(rowIndex, drag.sourceValue);
+        } else {
+          handleColumnCellChange(rowIndex, drag.sourceValue);
+        }
+      }
+
+      setFillDrag(null);
+      document.body.style.cursor = '';
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const drag = fillDragRef.current;
+      if (!drag) {
+        return;
+      }
+
+      const deltaRows = Math.round((event.clientY - drag.startClientY) / DATABASE_ROW_HEIGHT);
+      const nextPosition = Math.min(
+        positionToRowIndexRef.current.length - 1,
+        Math.max(0, drag.startPosition + deltaRows),
+      );
+      setFillDrag(prev => (prev ? { ...prev, currentPosition: nextPosition } : prev));
+    };
+
+    const handleMouseUp = () => applyFillDrag();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && fillDragRef.current) {
+        setFillDrag(null);
+        document.body.style.cursor = '';
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+    // handleXCellChange close over the latest selection state via
+    // selectedArraysRef, so they don't need to be in the dependency array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleGroupCollapsed = (groupPath: string) => {
     setCollapsedGroups(prev => {
@@ -1826,14 +2166,16 @@ function MappingGrid({
                   style={{ ...styles.hierarchyGroupCell, paddingLeft: 12 + displayRow.depth * 16 }}
                   onClick={() => toggleGroupCollapsed(displayRow.groupPath)}
                 >
-                  <ChevronDown
-                    size={12}
-                    strokeWidth={2}
-                    style={{
-                      ...styles.hierarchyChevron,
-                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                    }}
-                  />
+                  <IconHoverCircle circleSize={23}>
+                    <ChevronDown
+                      size={12}
+                      strokeWidth={2}
+                      style={{
+                        ...styles.hierarchyChevron,
+                        transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                      }}
+                    />
+                  </IconHoverCircle>
                   <span style={styles.hierarchyGroupLabel}>{displayRow.label}</span>
                 </button>
                 <span style={styles.gridCellText} />
@@ -1906,6 +2248,9 @@ function MappingGrid({
             value: column.name,
           }));
           const selectedColumnInfo = columns.find(column => column.name === selectedColumn);
+          const fillRangeLow = fillDrag ? Math.min(fillDrag.startPosition, fillDrag.currentPosition) : -1;
+          const fillRangeHigh = fillDrag ? Math.max(fillDrag.startPosition, fillDrag.currentPosition) : -1;
+          const inFillRange = fillDrag !== null && position >= fillRangeLow && position <= fillRangeHigh;
 
           return (
             <div key={displayRow.key} style={styles.databaseGridRow}>
@@ -1914,33 +2259,10 @@ function MappingGrid({
                   value={selectedSchemas[index] ?? ''}
                   options={schemaOptions}
                   disabled={schemasStatus !== 'ready' || schemas.length === 0}
-                  onChange={value => {
-                    const nextSchemas = [...selectedSchemas];
-                    const previousSchema = nextSchemas[index] ?? '';
-                    nextSchemas[index] = value;
-
-                    const nextTables = [...selectedTables];
-                    const nextColumns = [...selectedColumns];
-                    const nextColumnTypes = [...selectedColumnTypes];
-                    const nextPrimaryKeys = [...selectedPrimaryKeys];
-                    if (previousSchema !== value) {
-                      nextTables[index] = '';
-                      nextColumns[index] = '';
-                      nextColumnTypes[index] = '';
-                      nextPrimaryKeys[index] = false;
-                    }
-
-                    setSelectedSchemas(nextSchemas);
-                    setSelectedTables(nextTables);
-                    setSelectedColumns(nextColumns);
-                    setSelectedColumnTypes(nextColumnTypes);
-                    setSelectedPrimaryKeys(nextPrimaryKeys);
-                    emitMappingChange(nextSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
-
-                    if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
-                      onLoadTables(endpointId, value);
-                    }
-                  }}
+                  onChange={value => handleSchemaCellChange(index, value)}
+                  showFillHandle
+                  fillPreview={fillDrag?.column === 'schema' && inFillRange}
+                  onFillHandleMouseDown={event => startFillDrag('schema', position, index, selectedSchemas[index] ?? '', event)}
                 />
               </span>
               <span style={styles.schemaGridCell}>
@@ -1953,30 +2275,11 @@ function MappingGrid({
                       onLoadTables(endpointId, selectedSchema);
                     }
                   }}
-                  onChange={value => {
-                    const nextTables = [...selectedTables];
-                    const previousTable = nextTables[index] ?? '';
-                    nextTables[index] = value;
-
-                    const nextColumns = [...selectedColumns];
-                    const nextColumnTypes = [...selectedColumnTypes];
-                    const nextPrimaryKeys = [...selectedPrimaryKeys];
-                    if (previousTable !== value) {
-                      nextColumns[index] = '';
-                      nextColumnTypes[index] = '';
-                      nextPrimaryKeys[index] = false;
-                    }
-
-                    setSelectedTables(nextTables);
-                    setSelectedColumns(nextColumns);
-                    setSelectedColumnTypes(nextColumnTypes);
-                    setSelectedPrimaryKeys(nextPrimaryKeys);
-                    emitMappingChange(selectedSchemas, nextTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
-
-                    if (selectedSchema && value && (columnsStatusByTable[createTableKey(selectedSchema, value)] ?? 'idle') === 'idle') {
-                      onLoadColumns(endpointId, selectedSchema, value);
-                    }
-                  }}
+                  onChange={value => handleTableCellChange(index, value)}
+                  showFillHandle
+                  fillPreview={fillDrag?.column === 'table' && inFillRange}
+                  onFillHandleMouseDown={event => startFillDrag('table', position, index, selectedTables[index] ?? '', event)}
+                  optionsLoading={tablesStatus !== 'ready'}
                 />
               </span>
               <span style={styles.schemaGridCell}>
@@ -1990,20 +2293,11 @@ function MappingGrid({
                       onLoadColumns(endpointId, selectedSchema, selectedTable);
                     }
                   }}
-                  onChange={value => {
-                    const nextColumns = [...selectedColumns];
-                    nextColumns[index] = value;
-                    const selectedColumnInfo = columns.find(column => column.name === value);
-                    const nextColumnTypes = [...selectedColumnTypes];
-                    nextColumnTypes[index] = selectedColumnInfo?.dataType ?? '';
-                    const nextPrimaryKeys = [...selectedPrimaryKeys];
-                    nextPrimaryKeys[index] = selectedColumnInfo?.primaryKey ?? false;
-
-                    setSelectedColumns(nextColumns);
-                    setSelectedColumnTypes(nextColumnTypes);
-                    setSelectedPrimaryKeys(nextPrimaryKeys);
-                    emitMappingChange(selectedSchemas, selectedTables, nextColumns, nextColumnTypes, nextPrimaryKeys);
-                  }}
+                  onChange={value => handleColumnCellChange(index, value)}
+                  showFillHandle
+                  fillPreview={fillDrag?.column === 'column' && inFillRange}
+                  onFillHandleMouseDown={event => startFillDrag('column', position, index, selectedColumn, event)}
+                  optionsLoading={columnsStatus !== 'ready'}
                 />
               </span>
               <span style={styles.gridCellTextMuted}>{selectedColumnInfo?.dataType ?? selectedColumnType}</span>
@@ -2629,20 +2923,6 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: '18px',
     whiteSpace: 'nowrap',
   },
-  schemaEditorShell: {
-    position: 'relative',
-    width: '100%',
-    minWidth: 0,
-    height: '100%',
-    display: 'flex',
-    alignItems: 'stretch',
-    padding: '0 12px',
-    background: 'rgba(255,255,255,0.01)',
-    color: 'rgba(255,255,255,0.74)',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    lineHeight: '18px',
-  },
   schemaGridCell: {
     display: 'flex',
     alignItems: 'stretch',
@@ -2652,6 +2932,7 @@ const styles: Record<string, CSSProperties> = {
     background: 'rgba(255,255,255,0.01)',
   },
   schemaCellButton: {
+    position: 'relative',
     width: '100%',
     minWidth: 0,
     height: '100%',
@@ -2662,7 +2943,7 @@ const styles: Record<string, CSSProperties> = {
     border: 'none',
     background: 'transparent',
     padding: '0 12px',
-    cursor: 'text',
+    cursor: 'pointer',
     textAlign: 'left',
     outline: 'none',
     color: 'rgba(255,255,255,0.74)',
@@ -2679,21 +2960,22 @@ const styles: Record<string, CSSProperties> = {
     color: 'rgba(255,255,255,0.82)',
     padding: '0 8px',
   },
-  schemaArrowButton: {
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: 'none',
-    background: 'transparent',
-    color: 'inherit',
-    padding: 0,
-    cursor: 'pointer',
-    fontSize: 10,
+  schemaCellButtonSelected: {
+    boxShadow: 'inset 0 0 0 1px rgba(64,150,255,0.55)',
+    background: 'rgba(64,150,255,0.06)',
   },
-  schemaEditorArrowButton: {
-    width: 18,
+  schemaCellButtonEditing: {
+    boxShadow: 'inset 0 0 0 1px rgba(64,150,255,0.75)',
+    background: 'rgba(64,150,255,0.1)',
+    cursor: 'text',
+  },
+  schemaCellButtonFillPreview: {
+    boxShadow: 'inset 0 0 0 1px #4096ff',
+    background: 'rgba(64,150,255,0.1)',
+  },
+  schemaCellArrowButton: {
+    position: 'relative',
+    width: 22,
     height: '100%',
     display: 'flex',
     alignItems: 'center',
@@ -2706,26 +2988,43 @@ const styles: Record<string, CSSProperties> = {
     flexShrink: 0,
     fontSize: 10,
   },
-  schemaEditorShellOutlined: {
-    minHeight: 30,
-    border: '1px solid rgba(105,177,255,0.34)',
-    borderRadius: 5,
-    background: 'rgba(105,177,255,0.1)',
-    padding: '0 8px',
-  },
-  schemaEditorInput: {
-    flex: '1 1 auto',
-    width: 0,
-    minWidth: 0,
-    height: '100%',
-    border: 'none',
-    outline: 'none',
+  schemaCellArrowHoverCircle: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: 25,
+    height: 25,
+    borderRadius: '50%',
     background: 'transparent',
-    padding: 0,
+    pointerEvents: 'none',
+  },
+  schemaCellArrowHoverCircleActive: {
+    background: 'rgba(255,255,255,0.14)',
+  },
+  schemaFillHandle: {
+    position: 'absolute',
+    right: 1,
+    bottom: 1,
+    width: 7,
+    height: 7,
+    background: '#4096ff',
+    border: '1px solid rgba(0,0,0,0.45)',
+    cursor: 'ns-resize',
+    zIndex: 5,
+  },
+  schemaEditorContentEditable: {
+    flex: '1 1 auto',
+    minWidth: 0,
+    height: 18,
+    lineHeight: '18px',
     color: 'rgba(255,255,255,0.74)',
     fontSize: 12,
     fontFamily: 'monospace',
-    lineHeight: '18px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    outline: 'none',
+    cursor: 'text',
   },
   schemaDropdown: {
     position: 'absolute',
@@ -2784,15 +3083,8 @@ const styles: Record<string, CSSProperties> = {
   schemaCellLabelPlaceholder: {
     color: 'rgba(255,255,255,0.32)',
   },
-  schemaCellArrow: {
-    width: 18,
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    color: 'rgba(255,255,255,0.38)',
-    fontSize: 10,
+  schemaCellLabelInvalid: {
+    color: '#ff7875',
   },
   databaseGridNote: {
     padding: '10px 12px',
