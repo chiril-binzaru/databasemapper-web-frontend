@@ -13,6 +13,7 @@ import type {
 import type { DatabaseResponse, DbColumnResponse } from '../services/databaseApi';
 import GlassSaveButton from './GlassSaveButton';
 import IconHoverCircle from './IconHoverCircle';
+import { METHOD_COLORS } from '../utils/httpMethodColors';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -1306,7 +1307,7 @@ function MappingTab({
       onClick={onSelect}
     >
       <div style={styles.tabMeta}>
-        <span style={styles.tabMethod}>{tab.httpMethod}</span>
+        <span style={{ ...styles.tabMethod, color: METHOD_COLORS[tab.httpMethod] ?? 'var(--text-tertiary)' }}>{tab.httpMethod}</span>
         <span style={styles.tabPath}>{tab.endpointPath}</span>
       </div>
       {tab.isDirty ? <TabDirtyIndicator /> : <TabCloseButton onClick={onClose} />}
@@ -2590,7 +2591,6 @@ const styles: Record<string, CSSProperties> = {
     cursor: 'default',
   },
   tabMethod: {
-    color: '#49cc90',
     fontSize: 10,
     fontWeight: 700,
     letterSpacing: '0.05em',

@@ -27,14 +27,7 @@ import type { EndpointItem } from '../services/endpointsApi';
 import type { EndpointReplaceRequest } from '../services/endpointsApi';
 import type { EndpointSyncItem } from '../services/endpointsApi';
 import type { EndpointMappingTab } from '../services/endpointsApi';
-
-const METHOD_COLORS: Record<string, string> = {
-  GET: '#61affe',
-  POST: '#49cc90',
-  PUT: '#fca130',
-  PATCH: '#50e3c2',
-  DELETE: '#f93e3e',
-};
+import { METHOD_COLORS } from '../utils/httpMethodColors';
 
 const SECTION_CACHE_TTL_MS = 5 * 60 * 1000;
 
