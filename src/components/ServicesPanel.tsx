@@ -17,6 +17,7 @@ import { getServiceDatabase } from '../services/databaseApi';
 import type { DatabaseResponse } from '../services/databaseApi';
 import { deleteDatabaseConnection, getDatabaseConnections } from '../services/connectionsApi';
 import type { ConnectionItem } from '../services/connectionsApi';
+import IconHoverCircle from './IconHoverCircle';
 import NewConnectionModal from './NewConnectionModal';
 import NewEndpointModal from './NewEndpointModal';
 import EditServiceModal from './EditServiceModal';
@@ -493,12 +494,14 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
           }}
           onClick={() => handleServiceClick(id)}
         >
-          <RightOutlined
-            style={{
-              ...styles.chevron,
-              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            }}
-          />
+          <IconHoverCircle circleSize={21} circleColor="var(--bg-subtle-strong)">
+            <RightOutlined
+              style={{
+                ...styles.chevron,
+                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              }}
+            />
+          </IconHoverCircle>
           <AppstoreOutlined style={styles.serviceIcon} />
           <div style={styles.serviceInfo}>
             <div style={styles.serviceNameRow}>
@@ -536,12 +539,14 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                 style={styles.subSectionHeader}
                 onClick={() => void handleDatabaseClick(service.serviceId)}
               >
-                <RightOutlined
-                  style={{
-                    ...styles.subChevron,
-                    transform: dbExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                  }}
-                />
+                <IconHoverCircle circleSize={20} circleColor="var(--bg-subtle-strong)">
+                  <RightOutlined
+                    style={{
+                      ...styles.subChevron,
+                      transform: dbExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    }}
+                  />
+                </IconHoverCircle>
                 <DatabaseOutlined style={styles.subSectionIcon} />
                 <span style={styles.subSectionTitle}>Database</span>
               </div>
@@ -573,12 +578,14 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                           style={styles.nestedSectionHeader}
                           onClick={() => void handleConnectionsClick(database.databaseId)}
                         >
-                          <RightOutlined
-                            style={{
-                              ...styles.nestedChevron,
-                              transform: connectionsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                            }}
-                          />
+                          <IconHoverCircle circleSize={20} circleColor="var(--bg-subtle-strong)">
+                            <RightOutlined
+                              style={{
+                                ...styles.nestedChevron,
+                                transform: connectionsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}
+                            />
+                          </IconHoverCircle>
                           <ApiOutlined style={styles.nestedSectionIcon} />
                           <span style={styles.nestedSectionTitle}>Connections</span>
                           <Tooltip title="Add Connection" placement="bottom">
@@ -671,12 +678,14 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                 style={styles.subSectionHeader}
                 onClick={() => void handleEndpointsClick(service.serviceId)}
               >
-                <RightOutlined
-                  style={{
-                    ...styles.subChevron,
-                    transform: endpointsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                  }}
-                />
+                <IconHoverCircle circleSize={20} circleColor="var(--bg-subtle-strong)">
+                  <RightOutlined
+                    style={{
+                      ...styles.subChevron,
+                      transform: endpointsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    }}
+                  />
+                </IconHoverCircle>
                 <ApiOutlined style={styles.subSectionIcon} />
                 <span style={styles.subSectionTitle}>Endpoints</span>
                 <Dropdown
