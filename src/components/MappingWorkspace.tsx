@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import type {
   EndpointMappingTab,
+  FieldDatabaseInfo,
   JoinConditionPairDto,
   JoinEntryDto,
   MappingDto,
@@ -14,6 +15,7 @@ import type { DatabaseResponse, DbColumnResponse } from '../services/databaseApi
 import GlassSaveButton from './GlassSaveButton';
 import IconHoverCircle from './IconHoverCircle';
 import { METHOD_COLORS } from '../utils/httpMethodColors';
+import { createFieldMappingsFromResponseModel, resolveResponseModelRootName } from '../utils/responseModelMapping';
 
 interface MappingWorkspaceTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -520,8 +522,13 @@ function SchemaCell({
           }}
         />
       )}
-      {dropdownOpen && visibleOptions.length > 0 && (
+      {dropdownOpen && (
         <div style={styles.schemaDropdown}>
+          {visibleOptions.length === 0 && (
+            <span style={styles.schemaDropdownEmpty}>
+              {optionsLoading ? 'Loading...' : 'No options available'}
+            </span>
+          )}
           {visibleOptions.map(option => (
             <button
               key={option.value}
@@ -1537,6 +1544,116 @@ function updateMappingColumnPaths(
   };
 }
 
+function buildDatabaseInfoForRow(
+  index: number,
+  selectedSchemas: string[],
+  selectedTables: string[],
+  selectedColumns: string[],
+  selectedColumnTypes: string[],
+  selectedPrimaryKeys: boolean[],
+): FieldDatabaseInfo | undefined {
+  const schema = selectedSchemas[index] ?? '';
+  const table = selectedTables[index] ?? '';
+  const column = selectedColumns[index] ?? '';
+  const columnType = selectedColumnTypes[index] ?? '';
+  const primaryKey = selectedPrimaryKeys[index] ?? false;
+  const columnPath = schema && table && column
+    ? `${schema}.${table}.${column}`
+    : schema && table
+      ? `${schema}.${table}`
+      : schema || undefined;
+
+  if (!columnPath) {
+    return undefined;
+  }
+
+  const databaseInfo: FieldDatabaseInfo = { columnPath, primaryKey };
+  if (columnType) {
+    databaseInfo.columnType = columnType;
+  }
+  return databaseInfo;
+}
+
+// Inserts a leaf field (by its dotted path) into a MappingFieldEntry tree,
+// cloning intermediate group entries' shape (kind/type/format/modelName) from
+// fullTree — the complete response-model-derived tree — whenever an ancestor
+// doesn't already exist. Shared ancestors already present in `tree` are
+// reused rather than duplicated. New entries are always appended.
+function insertFieldPath(
+  tree: MappingFieldEntry[],
+  fullTree: MappingFieldEntry[],
+  pathSegments: string[],
+  leafDatabaseInfo: FieldDatabaseInfo | undefined,
+): MappingFieldEntry[] {
+  const [segment, ...rest] = pathSegments;
+  const nextTree = tree.map(entry => ({ ...entry }));
+  const existingIndex = nextTree.findIndex(entry => entry.serviceInfo.modelField === segment);
+
+  if (rest.length === 0) {
+    if (existingIndex >= 0) {
+      nextTree[existingIndex] = { ...nextTree[existingIndex], databaseInfo: leafDatabaseInfo };
+      return nextTree;
+    }
+
+    const fullMatch = fullTree.find(entry => entry.serviceInfo.modelField === segment);
+    if (!fullMatch) {
+      return nextTree;
+    }
+
+    nextTree.push({ ...fullMatch, fieldMappings: undefined, databaseInfo: leafDatabaseInfo });
+    return nextTree;
+  }
+
+  const fullMatch = fullTree.find(entry => entry.serviceInfo.modelField === segment);
+  const childFullTree = fullMatch?.fieldMappings ?? [];
+
+  if (existingIndex >= 0) {
+    const existingEntry = nextTree[existingIndex];
+    nextTree[existingIndex] = {
+      ...existingEntry,
+      fieldMappings: insertFieldPath(existingEntry.fieldMappings ?? [], childFullTree, rest, leafDatabaseInfo),
+    };
+    return nextTree;
+  }
+
+  if (!fullMatch) {
+    return nextTree;
+  }
+
+  nextTree.push({
+    ...fullMatch,
+    fieldMappings: insertFieldPath([], childFullTree, rest, leafDatabaseInfo),
+  });
+  return nextTree;
+}
+
+// Inverse of insertFieldPath — removes a leaf by its dotted path and prunes
+// any ancestor group entry left with an empty fieldMappings array.
+function removeFieldPath(tree: MappingFieldEntry[], pathSegments: string[]): MappingFieldEntry[] {
+  const [segment, ...rest] = pathSegments;
+  const index = tree.findIndex(entry => entry.serviceInfo.modelField === segment);
+
+  if (index < 0) {
+    return tree;
+  }
+
+  if (rest.length === 0) {
+    return tree.filter((_, i) => i !== index);
+  }
+
+  const entry = tree[index];
+  const nextChildren = removeFieldPath(entry.fieldMappings ?? [], rest);
+  const nextTree = [...tree];
+
+  if (nextChildren.length === 0) {
+    nextTree.splice(index, 1);
+  } else {
+    nextTree[index] = { ...entry, fieldMappings: nextChildren };
+  }
+
+  return nextTree;
+}
+
 function getRowsFromMapping(mapping: MappingDto | null): MappingGridRow[] {
   if (!mapping) {
     return [];
@@ -1690,6 +1807,8 @@ function MappingGrid({
   endpointId,
   mapping,
   serviceRows,
+  responseModel,
+  responseModelStatus,
   schemasStatus,
   schemas,
   schemasError,
@@ -1706,6 +1825,8 @@ function MappingGrid({
   endpointId: number;
   mapping: MappingDto | null;
   serviceRows: MappingGridRow[];
+  responseModel: unknown | null;
+  responseModelStatus: MappingWorkspaceTab['responseModelStatus'];
   schemasStatus: MappingWorkspaceTab['schemasStatus'];
   schemas: string[];
   schemasError: string | null;
@@ -1725,43 +1846,83 @@ function MappingGrid({
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [selectedColumnTypes, setSelectedColumnTypes] = useState<string[]>([]);
   const [selectedPrimaryKeys, setSelectedPrimaryKeys] = useState<boolean[]>([]);
+  const [selectedFieldPaths, setSelectedFieldPaths] = useState<string[]>([]);
   const [mappingSectionExpanded, setMappingSectionExpanded] = useState(true);
   const [joinsSectionExpanded, setJoinsSectionExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<MappingViewMode>('flat');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
+  const rootModelName = useMemo(
+    () => resolveResponseModelRootName(responseModel, mapping?.modelName),
+    [responseModel, mapping?.modelName],
+  );
+  const responseModelTree = useMemo(
+    () => (responseModel && rootModelName ? createFieldMappingsFromResponseModel(responseModel, rootModelName) : []),
+    [responseModel, rootModelName],
+  );
+  const leafFieldEntries = useMemo(
+    () => flattenMappingEntries(responseModelTree).filter(entry => !entry.fieldMappings || entry.fieldMappings.length === 0),
+    [responseModelTree],
+  );
+  const fieldsEditable = responseModelStatus === 'ready';
+
+  const getFieldOptionsForIndex = (index: number) => leafFieldEntries
+    .filter(entry => !selectedFieldPaths.some((selected, otherIndex) => otherIndex !== index && selected === entry.serviceInfo.modelField))
+    .map(entry => ({ label: entry.serviceInfo.modelField, value: entry.serviceInfo.modelField }));
+
   useEffect(() => {
     const flattenedEntries = mapping ? flattenMappingEntries(mapping.fieldMappings) : [];
 
-    setSelectedSchemas(Array.from({ length: databaseRowCount }, (_, index) => {
+    // Rows beyond the currently-mapped fields (serviceRows) have no backing
+    // mapping entry, so their local database-side selections (made e.g.
+    // while a since-cleared field previously occupied that row) are
+    // preserved here rather than reset to blank.
+    setSelectedSchemas(previous => Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      if (!row) {
+        return previous[index] ?? '';
+      }
+      const entry = flattenedEntries.find(item => item.serviceInfo.modelField === row.name);
       return parseColumnPath(entry?.databaseInfo?.columnPath).schema;
     }));
 
-    setSelectedTables(Array.from({ length: databaseRowCount }, (_, index) => {
+    setSelectedTables(previous => Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      if (!row) {
+        return previous[index] ?? '';
+      }
+      const entry = flattenedEntries.find(item => item.serviceInfo.modelField === row.name);
       return parseColumnPath(entry?.databaseInfo?.columnPath).table;
     }));
 
-    setSelectedColumns(Array.from({ length: databaseRowCount }, (_, index) => {
+    setSelectedColumns(previous => Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      if (!row) {
+        return previous[index] ?? '';
+      }
+      const entry = flattenedEntries.find(item => item.serviceInfo.modelField === row.name);
       return parseColumnPath(entry?.databaseInfo?.columnPath).column;
     }));
 
-    setSelectedColumnTypes(Array.from({ length: databaseRowCount }, (_, index) => {
+    setSelectedColumnTypes(previous => Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      if (!row) {
+        return previous[index] ?? '';
+      }
+      const entry = flattenedEntries.find(item => item.serviceInfo.modelField === row.name);
       return entry?.databaseInfo?.columnType ?? '';
     }));
 
-    setSelectedPrimaryKeys(Array.from({ length: databaseRowCount }, (_, index) => {
+    setSelectedPrimaryKeys(previous => Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
-      const entry = row ? flattenedEntries.find(item => item.serviceInfo.modelField === row.name) : null;
+      if (!row) {
+        return previous[index] ?? false;
+      }
+      const entry = flattenedEntries.find(item => item.serviceInfo.modelField === row.name);
       return entry?.databaseInfo?.primaryKey ?? false;
     }));
+
+    setSelectedFieldPaths(Array.from({ length: databaseRowCount }, (_, index) => serviceRows[index]?.name ?? ''));
   }, [databaseRowCount, mapping, serviceRows]);
 
   // Resolve options for schemas/tables restored from a persisted mapping so
@@ -1964,6 +2125,71 @@ function MappingGrid({
     emitMappingChange(current.schemas, current.tables, nextColumns, nextColumnTypes, nextPrimaryKeys);
   };
 
+  // The fill-drag listeners are bound once, so they must not call the handlers
+  // through their own (first-render) closure: those still see the mapping and
+  // serviceRows as they were at mount, and re-emitting from that base wipes
+  // every field added since. Mirroring the handlers here keeps the drag on the
+  // current render's mapping.
+  const cellChangeHandlersRef = useRef({
+    schema: handleSchemaCellChange,
+    table: handleTableCellChange,
+    column: handleColumnCellChange,
+  });
+  cellChangeHandlersRef.current = {
+    schema: handleSchemaCellChange,
+    table: handleTableCellChange,
+    column: handleColumnCellChange,
+  };
+
+  const handleFieldCellChange = (index: number, fieldPath: string) => {
+    const nextSelectedFieldPaths = [...selectedFieldPaths];
+    const previousFieldPath = nextSelectedFieldPaths[index] ?? '';
+    nextSelectedFieldPaths[index] = fieldPath;
+    setSelectedFieldPaths(nextSelectedFieldPaths);
+
+    if (!mapping) {
+      return;
+    }
+
+    const rowOptions = getFieldOptionsForIndex(index);
+    const matchedEntry = fieldPath && rowOptions.some(option => option.value === fieldPath)
+      ? leafFieldEntries.find(entry => entry.serviceInfo.modelField === fieldPath)
+      : undefined;
+
+    if (!matchedEntry) {
+      if (previousFieldPath && previousFieldPath !== fieldPath) {
+        const nextFieldMappings = removeFieldPath(mapping.fieldMappings, previousFieldPath.split('.'));
+        onChangeMapping(endpointId, { ...mapping, fieldMappings: nextFieldMappings });
+      }
+      return;
+    }
+
+    let nextFieldMappings = mapping.fieldMappings;
+    if (previousFieldPath && previousFieldPath !== fieldPath) {
+      nextFieldMappings = removeFieldPath(nextFieldMappings, previousFieldPath.split('.'));
+    }
+
+    const databaseInfo = buildDatabaseInfoForRow(
+      index,
+      selectedSchemas,
+      selectedTables,
+      selectedColumns,
+      selectedColumnTypes,
+      selectedPrimaryKeys,
+    );
+
+    nextFieldMappings = insertFieldPath(nextFieldMappings, responseModelTree, fieldPath.split('.'), databaseInfo);
+
+    // The inserted entries describe the response model's root schema, so an
+    // out-of-date modelName (derived from the endpoint path before the model
+    // was synced) is realigned with it rather than left contradicting them.
+    onChangeMapping(endpointId, {
+      ...mapping,
+      modelName: rootModelName ?? mapping.modelName,
+      fieldMappings: nextFieldMappings,
+    });
+  };
+
   const scopes = useMemo(
     () => getScopesFromMapping(mapping, selectedSchemas, selectedTables, serviceRows),
     [mapping, selectedSchemas, selectedTables, serviceRows],
@@ -1976,6 +2202,12 @@ function MappingGrid({
     [serviceRows, viewMode, collapsedGroups],
   );
   const displayRowCount = Math.max(EMPTY_GRID_ROWS, displayRows.length);
+
+  // Positions past the last rendered displayRow are blank trailing rows with
+  // no backing mapping entry yet — their row index simply continues on from
+  // the last real serviceRow, matching how selectedFieldPaths/selectedSchemas
+  // are sized (databaseRowCount).
+  const blankRowIndexForPosition = (position: number) => serviceRows.length + (position - displayRows.length);
 
   // Maps each rendered database-grid row position to the row index used by
   // selectedSchemas/selectedTables/... (null for group headers / trailing
@@ -2039,13 +2271,7 @@ function MappingGrid({
           continue;
         }
 
-        if (drag.column === 'schema') {
-          handleSchemaCellChange(rowIndex, drag.sourceValue);
-        } else if (drag.column === 'table') {
-          handleTableCellChange(rowIndex, drag.sourceValue);
-        } else {
-          handleColumnCellChange(rowIndex, drag.sourceValue);
-        }
+        cellChangeHandlersRef.current[drag.column](rowIndex, drag.sourceValue);
       }
 
       setFillDrag(null);
@@ -2083,9 +2309,9 @@ function MappingGrid({
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
-    // handleXCellChange close over the latest selection state via
-    // selectedArraysRef, so they don't need to be in the dependency array.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Everything the listeners read comes from a ref (the drag itself, the
+    // position map, the cell-change handlers), so they stay correct without
+    // being rebound on every render.
   }, []);
 
   const toggleGroupCollapsed = (groupPath: string) => {
@@ -2148,9 +2374,23 @@ function MappingGrid({
           const displayRow = displayRows[position];
 
           if (!displayRow) {
+            const blankIndex = blankRowIndexForPosition(position);
+            const canEditBlankField = fieldsEditable && viewMode === 'flat' && blankIndex < selectedFieldPaths.length;
+
             return (
               <div key={`service-empty-${position}`} style={styles.gridRow}>
-                <span style={styles.gridCellText} />
+                {canEditBlankField ? (
+                  <span style={styles.schemaGridCell}>
+                    <SchemaCell
+                      value={selectedFieldPaths[blankIndex] ?? ''}
+                      options={getFieldOptionsForIndex(blankIndex)}
+                      disabled={false}
+                      onChange={value => handleFieldCellChange(blankIndex, value)}
+                    />
+                  </span>
+                ) : (
+                  <span style={styles.gridCellText} />
+                )}
                 <span style={styles.gridCellText} />
                 <span style={styles.gridCellTextMuted} />
               </div>
@@ -2185,18 +2425,31 @@ function MappingGrid({
             );
           }
 
-          const row = serviceRows[displayRow.rowIndex as number];
+          const rowIndex = displayRow.rowIndex as number;
+          const row = serviceRows[rowIndex];
+          const canEditField = fieldsEditable && viewMode === 'flat';
 
           return (
             <div key={displayRow.key} style={styles.gridRow}>
-              <span
-                style={{
-                  ...styles.gridCellText,
-                  ...(viewMode === 'hierarchical' ? { paddingLeft: 12 + displayRow.depth * 16 } : null),
-                }}
-              >
-                {viewMode === 'hierarchical' ? displayRow.label : row?.name ?? ''}
-              </span>
+              {canEditField ? (
+                <span style={styles.schemaGridCell}>
+                  <SchemaCell
+                    value={selectedFieldPaths[rowIndex] ?? ''}
+                    options={getFieldOptionsForIndex(rowIndex)}
+                    disabled={false}
+                    onChange={value => handleFieldCellChange(rowIndex, value)}
+                  />
+                </span>
+              ) : (
+                <span
+                  style={{
+                    ...styles.gridCellText,
+                    ...(viewMode === 'hierarchical' ? { paddingLeft: 12 + displayRow.depth * 16 } : null),
+                  }}
+                >
+                  {viewMode === 'hierarchical' ? displayRow.label : row?.name ?? ''}
+                </span>
+              )}
               <span style={styles.gridCellText}>{row?.type ?? ''}</span>
               <span style={styles.gridCellTextMuted}>{row?.format ?? ''}</span>
             </div>
@@ -2446,6 +2699,8 @@ export default function MappingWorkspace({
               endpointId={activeTab.endpointId}
               mapping={activeTab.mapping}
               serviceRows={getRowsFromMapping(activeTab.mapping)}
+              responseModel={activeTab.responseModel}
+              responseModelStatus={activeTab.responseModelStatus}
               schemasStatus={activeTab.schemasStatus}
               schemas={activeTab.schemas}
               schemasError={activeTab.schemasError}
@@ -2499,6 +2754,8 @@ export default function MappingWorkspace({
               endpointId={activeTab.endpointId}
               mapping={activeTab.mapping}
               serviceRows={getRowsFromMapping(activeTab.mapping)}
+              responseModel={activeTab.responseModel}
+              responseModelStatus={activeTab.responseModelStatus}
               schemasStatus={activeTab.schemasStatus}
               schemas={activeTab.schemas}
               schemasError={activeTab.schemasError}
@@ -3039,6 +3296,16 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 6,
     background: '#1f1f1f',
     boxShadow: '0 8px 22px rgba(0,0,0,0.35)',
+  },
+  schemaDropdownEmpty: {
+    display: 'flex',
+    alignItems: 'center',
+    minHeight: 28,
+    padding: '0 8px',
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 12,
+    fontStyle: 'italic',
+    lineHeight: '18px',
   },
   schemaDropdownOption: {
     width: '100%',
