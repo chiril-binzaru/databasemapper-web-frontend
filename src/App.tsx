@@ -18,6 +18,7 @@ import type { EndpointMappingTab, MappingDto, MappingFieldEntry } from './servic
 import { getDatabaseColumns, getDatabaseSchemas, getDatabaseTables, getServiceDatabase } from './services/databaseApi';
 import type { DatabaseResponse, DbColumnResponse } from './services/databaseApi';
 import { getServices } from './services/servicesApi';
+import { createFieldMappingsFromResponseModel, resolveResponseModelRootName } from './utils/responseModelMapping';
 
 interface OpenMappingTab extends EndpointMappingTab {
   mappingStatus: 'loading' | 'ready' | 'error';
@@ -65,112 +66,6 @@ function deriveModelNameFromEndpoint(endpointPath: string): string {
     .join('');
 }
 
-function getResponseModelRootName(responseModel: unknown): string | null {
-  if (!responseModel || typeof responseModel !== 'object' || Array.isArray(responseModel)) {
-    return null;
-  }
-
-  return Object.keys(responseModel as Record<string, unknown>)[0] ?? null;
-}
-
-function getRefName(ref: unknown): string | null {
-  if (typeof ref !== 'string') {
-    return null;
-  }
-
-  const match = ref.match(/#\/components\/schemas\/(.+)$/);
-  return match ? match[1] : null;
-}
-
-function createFieldMappingsFromResponseModel(responseModel: unknown, rootModelName: string): MappingFieldEntry[] {
-  if (!responseModel || typeof responseModel !== 'object' || Array.isArray(responseModel)) {
-    return [];
-  }
-
-  const schemas = responseModel as Record<string, unknown>;
-
-  const createEntries = (schemaName: string, visited = new Set<string>()): MappingFieldEntry[] => {
-    if (visited.has(schemaName)) {
-      return [];
-    }
-
-    const schema = schemas[schemaName];
-    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
-      return [];
-    }
-
-    const properties = (schema as { properties?: unknown }).properties;
-    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
-      return [];
-    }
-
-    const nextVisited = new Set(visited);
-    nextVisited.add(schemaName);
-
-    return Object.entries(properties as Record<string, unknown>).map<MappingFieldEntry>(([modelField, fieldSchema]) => {
-      const normalizedFieldSchema =
-        fieldSchema && typeof fieldSchema === 'object' && !Array.isArray(fieldSchema)
-          ? fieldSchema as Record<string, unknown>
-          : {};
-      const directRefName = getRefName(normalizedFieldSchema.$ref);
-
-      if (directRefName) {
-        return {
-          kind: 'MODEL',
-          serviceInfo: {
-            modelField,
-            type: directRefName,
-            format: '',
-            modelName: directRefName,
-          },
-          fieldMappings: createEntries(directRefName, nextVisited),
-        };
-      }
-
-      if (normalizedFieldSchema.type === 'array') {
-        const items =
-          normalizedFieldSchema.items && typeof normalizedFieldSchema.items === 'object' && !Array.isArray(normalizedFieldSchema.items)
-            ? normalizedFieldSchema.items as Record<string, unknown>
-            : null;
-        const itemRefName = items ? getRefName(items.$ref) : null;
-
-        if (itemRefName) {
-          return {
-            kind: 'LIST_OF_MODELS',
-            serviceInfo: {
-              modelField,
-              type: 'array',
-              format: '',
-              modelName: itemRefName,
-            },
-            fieldMappings: createEntries(itemRefName, nextVisited),
-          };
-        }
-
-        return {
-          kind: 'LIST_OF_VALUES',
-          serviceInfo: {
-            modelField,
-            type: 'array',
-            format: items && typeof items.format === 'string' ? items.format : '',
-          },
-        };
-      }
-
-      return {
-        kind: 'VALUE',
-        serviceInfo: {
-          modelField,
-          type: typeof normalizedFieldSchema.type === 'string' ? normalizedFieldSchema.type : '',
-          format: typeof normalizedFieldSchema.format === 'string' ? normalizedFieldSchema.format : '',
-        },
-      };
-    });
-  };
-
-  return createEntries(rootModelName);
-}
-
 function createEmptyMapping(tab: EndpointMappingTab): MappingDto {
   return {
     modelName: deriveModelNameFromEndpoint(tab.endpointPath),
@@ -180,7 +75,7 @@ function createEmptyMapping(tab: EndpointMappingTab): MappingDto {
 }
 
 function createMappingWithResponseModel(tab: EndpointMappingTab, responseModel: unknown): MappingDto {
-  const modelName = getResponseModelRootName(responseModel) ?? deriveModelNameFromEndpoint(tab.endpointPath);
+  const modelName = resolveResponseModelRootName(responseModel) ?? deriveModelNameFromEndpoint(tab.endpointPath);
 
   return {
     modelName,
@@ -291,10 +186,14 @@ function AppLayout() {
         let schemasStatus: OpenMappingTab['schemasStatus'] = 'idle';
         let schemas: string[] = [];
         let schemasError: string | null = null;
+        let responseModelStatus: OpenMappingTab['responseModelStatus'] = 'idle';
+        let responseModel: unknown | null = null;
+        let responseModelError: string | null = null;
 
         if (mapping) {
           databaseStatus = 'ready';
           schemasStatus = 'ready';
+          responseModelStatus = 'ready';
 
           try {
             database = await getServiceDatabase(mappingTab.serviceId);
@@ -310,6 +209,13 @@ function AppLayout() {
               schemasStatus = 'error';
               schemasError = 'Failed to load database schemas.';
             }
+          }
+
+          try {
+            responseModel = await getEndpointResponseModel(mappingTab.endpointId);
+          } catch {
+            responseModelStatus = 'error';
+            responseModelError = 'Failed to load response model for this endpoint.';
           }
         }
 
@@ -329,6 +235,9 @@ function AppLayout() {
                 schemasStatus,
                 schemas,
                 schemasError,
+                responseModelStatus,
+                responseModel,
+                responseModelError,
               }
             : tab
         )));
@@ -403,7 +312,7 @@ function AppLayout() {
         saveStatus: 'idle',
         saveError: null,
         workspaceMode,
-        responseModelStatus: workspaceMode === 'response-model-grid' ? 'loading' : 'idle',
+        responseModelStatus: 'loading',
         responseModel: null,
         responseModelError: null,
         databaseStatus: 'loading',
@@ -421,8 +330,7 @@ function AppLayout() {
     const serviceId = targetTab.serviceId;
 
     void (async () => {
-      let responseModelStatus: OpenMappingTab['responseModelStatus'] =
-        workspaceMode === 'response-model-grid' ? 'ready' : 'idle';
+      let responseModelStatus: OpenMappingTab['responseModelStatus'] = 'ready';
       let responseModel: unknown | null = null;
       let responseModelError: string | null = null;
       let databaseStatus: OpenMappingTab['databaseStatus'] = 'ready';
@@ -433,13 +341,11 @@ function AppLayout() {
       let schemasError: string | null = null;
       let mapping: MappingDto;
 
-      if (workspaceMode === 'response-model-grid') {
-        try {
-          responseModel = await getEndpointResponseModel(endpointId);
-        } catch {
-          responseModelStatus = 'error';
-          responseModelError = 'Failed to load response model for this endpoint.';
-        }
+      try {
+        responseModel = await getEndpointResponseModel(endpointId);
+      } catch {
+        responseModelStatus = 'error';
+        responseModelError = 'Failed to load response model for this endpoint.';
       }
 
       const mappingPayload = workspaceMode === 'response-model-grid'
