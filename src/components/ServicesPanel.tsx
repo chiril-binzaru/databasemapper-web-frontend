@@ -35,6 +35,30 @@ function getEndpointKey(endpoint: Pick<EndpointItem, 'httpMethod' | 'path'>) {
   return `${endpoint.httpMethod}:${endpoint.path}`;
 }
 
+// A selected row is tinted with its own method color, so hovering and pressing
+// it deepen that tint rather than switching to the neutral greys an unselected
+// row uses. Methods with no color fall back to the neutral scale throughout.
+function getEndpointRowBackground(
+  methodColor: string | undefined,
+  isSelected: boolean,
+  isHovered: boolean,
+  isPressed: boolean,
+): string {
+  if (isSelected) {
+    if (!methodColor) {
+      return 'var(--bg-subtle-strong)';
+    }
+    const alpha = isPressed ? '3d' : isHovered ? '2e' : '1f';
+    return `${methodColor}${alpha}`;
+  }
+
+  if (isPressed) {
+    return 'var(--bg-subtle-strong)';
+  }
+
+  return isHovered ? 'var(--bg-subtle)' : 'transparent';
+}
+
 interface ServicesPanelProps {
   onOpenMapping: (mapping: EndpointMappingTab) => void;
 }
@@ -48,6 +72,8 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   const [connectionsExpanded, setConnectionsExpanded] = useState(false);
   const [endpointsExpanded, setEndpointsExpanded] = useState(false);
   const [selectedEndpointId, setSelectedEndpointId] = useState<number | null>(null);
+  const [hoveredEndpointId, setHoveredEndpointId] = useState<number | null>(null);
+  const [pressedEndpointId, setPressedEndpointId] = useState<number | null>(null);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [editingService, setEditingService] = useState<ServiceResponse | null>(null);
@@ -726,33 +752,54 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                   ) : (endpointsByService[service.serviceId] ?? []).length === 0 ? (
                     <span style={styles.emptyHint}>No endpoint was added for this service</span>
                   ) : (
-                    (endpointsByService[service.serviceId] ?? []).map(ep => (
-                      <button
-                        key={ep.endpointId}
-                        type="button"
-                        style={{
-                          ...styles.endpointItem,
-                          ...(selectedEndpointId === ep.endpointId ? styles.endpointItemSelected : null),
-                        }}
-                        onClick={() => {
-                          setSelectedEndpointId(ep.endpointId);
-                        }}
-                        onDoubleClick={event => {
-                          event.stopPropagation();
-                          setSelectedEndpointId(ep.endpointId);
-                          onOpenMapping({
-                            endpointId: ep.endpointId,
-                            serviceId: service.serviceId,
-                            serviceName: service.serviceName,
-                            httpMethod: ep.httpMethod,
-                            endpointPath: ep.path,
-                          });
-                        }}
-                      >
-                        <span style={{ ...styles.endpointMethod, color: METHOD_COLORS[ep.httpMethod] ?? 'var(--text-tertiary)' }}>{ep.httpMethod}</span>
-                        <span style={styles.endpointPath}>{ep.path}</span>
-                      </button>
-                    ))
+                    (endpointsByService[service.serviceId] ?? []).map(ep => {
+                      const methodColor = METHOD_COLORS[ep.httpMethod];
+                      const accentColor = methodColor ?? 'var(--text-tertiary)';
+                      const isSelected = selectedEndpointId === ep.endpointId;
+
+                      return (
+                        <button
+                          key={ep.endpointId}
+                          type="button"
+                          style={{
+                            ...styles.endpointItem,
+                            // Both derive from the method color, so neither can
+                            // live in the static style map.
+                            background: getEndpointRowBackground(
+                              methodColor,
+                              isSelected,
+                              hoveredEndpointId === ep.endpointId,
+                              pressedEndpointId === ep.endpointId,
+                            ),
+                            ...(isSelected ? { borderColor: accentColor } : null),
+                          }}
+                          onMouseEnter={() => setHoveredEndpointId(ep.endpointId)}
+                          onMouseLeave={() => {
+                            setHoveredEndpointId(current => (current === ep.endpointId ? null : current));
+                            setPressedEndpointId(current => (current === ep.endpointId ? null : current));
+                          }}
+                          onMouseDown={() => setPressedEndpointId(ep.endpointId)}
+                          onMouseUp={() => setPressedEndpointId(current => (current === ep.endpointId ? null : current))}
+                          onClick={() => {
+                            setSelectedEndpointId(ep.endpointId);
+                          }}
+                          onDoubleClick={event => {
+                            event.stopPropagation();
+                            setSelectedEndpointId(ep.endpointId);
+                            onOpenMapping({
+                              endpointId: ep.endpointId,
+                              serviceId: service.serviceId,
+                              serviceName: service.serviceName,
+                              httpMethod: ep.httpMethod,
+                              endpointPath: ep.path,
+                            });
+                          }}
+                        >
+                          <span style={{ ...styles.endpointMethod, color: accentColor }}>{ep.httpMethod}</span>
+                          <span style={styles.endpointPath}>{ep.path}</span>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -1123,15 +1170,21 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '5px 8px',
+    // Padding absorbs the always-present 1px border so selecting a row
+    // doesn't nudge the list by 2px.
+    padding: '4px 7px',
     width: '100%',
-    border: 'none',
+    // Longhands, not the `border` shorthand: the selected state overrides
+    // borderColor alone, and clearing a longhand that the base only sets via
+    // a shorthand falls back to currentColor (a black ring on deselect).
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'transparent',
     background: 'transparent',
     textAlign: 'left',
     borderRadius: 'var(--r-sm)',
-  },
-  endpointItemSelected: {
-    background: 'var(--accent-subtle)',
+    cursor: 'pointer',
+    transition: 'background 0.15s ease, border-color 0.15s ease',
   },
   endpointMethod: {
     fontSize: 10,
