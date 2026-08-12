@@ -111,6 +111,15 @@ function AppLayout() {
   const { message } = AntApp.useApp();
   const loadingColumnKeysRef = useRef<Set<string>>(new Set());
   const [openPanel, setOpenPanel] = useState<PanelType>(null);
+  // Hiding the side panel rather than unmounting it keeps ServicesPanel's
+  // expanded service/section state and its loaded lists alive; unmounting reset
+  // the tree to a flat list of collapsed services on every reopen. The last
+  // panel is remembered so it can stay mounted while openPanel is null.
+  const lastOpenPanelRef = useRef<NonNullable<PanelType> | null>(null);
+  if (openPanel) {
+    lastOpenPanelRef.current = openPanel;
+  }
+  const mountedPanel = openPanel ?? lastOpenPanelRef.current;
   const [pinned, setPinned] = useState(false);
   const [panelWidth, setPanelWidth] = useState(576);
   const [mappingTabs, setMappingTabs] = useState<OpenMappingTab[]>([]);
@@ -634,9 +643,10 @@ function AppLayout() {
     <div style={styles.root}>
       <AppSidebar activePanel={openPanel} onToggle={handleToggle} />
       <div style={styles.workspace}>
-        {openPanel && (
+        {mountedPanel && (
           <AppSidePanel
-            panel={openPanel}
+            panel={mountedPanel}
+            hidden={openPanel === null}
             pinned={pinned}
             width={panelWidth}
             onClose={handleClose}

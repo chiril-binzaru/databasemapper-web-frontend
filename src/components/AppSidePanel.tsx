@@ -12,6 +12,7 @@ import type { EndpointMappingTab } from '../services/endpointsApi';
 
 interface AppSidePanelProps {
   panel: PanelType;
+  hidden?: boolean;
   pinned: boolean;
   width: number;
   onClose: () => void;
@@ -57,6 +58,7 @@ const MAX_PANEL_WIDTH = 920;
 
 export default function AppSidePanel({
   panel,
+  hidden = false,
   pinned,
   width,
   onClose,
@@ -103,6 +105,7 @@ export default function AppSidePanel({
         style={{
           ...(pinned ? styles.panelPinned : styles.panelFloat),
           width,
+          ...(hidden ? { display: 'none' } : null),
         }}
       >
         <div style={styles.header}>
