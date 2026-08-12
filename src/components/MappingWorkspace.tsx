@@ -283,9 +283,13 @@ function SchemaCell({
   const [editText, setEditText] = useState('');
   const [hoveredOptionValue, setHoveredOptionValue] = useState<string | null>(null);
   const [arrowHovered, setArrowHovered] = useState(false);
+  // Set when editing was entered by typing over a selected cell: the typed
+  // character seeds the editor instead of the previous content.
+  const [editSeed, setEditSeed] = useState<string | null>(null);
   const blurTimeoutRef = useRef<number | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const cellRef = useRef<HTMLDivElement | null>(null);
+  const optionRefs = useRef(new Map<string, HTMLButtonElement | null>());
 
   const displayValue = options.find(option => option.value === value)?.label ?? value;
   const isInvalid = value !== '' && !optionsLoading && !options.some(option => option.value === value);
@@ -316,11 +320,36 @@ function SchemaCell({
     setMode('selected');
   };
 
-  const enterEditing = () => {
+  // `seedText` replaces the cell's content instead of editing it in place, and
+  // opens the dropdown so the first typed character already filters the list
+  // (later characters do it through onInput).
+  const enterEditing = (seedText?: string) => {
     clearBlurTimeout();
-    setEditText(displayValue);
-    setDropdownOpen(false);
+    setEditSeed(seedText ?? null);
+    setEditText(seedText ?? displayValue);
+    setDropdownOpen(seedText !== undefined);
+    setHoveredOptionValue(null);
     setMode('editing');
+  };
+
+  const openDropdownForKeyboard = () => {
+    onOpenDropdown?.();
+    setDropdownOpen(true);
+    setHoveredOptionValue(
+      visibleOptions.some(option => option.value === value) ? value : visibleOptions[0]?.value ?? null,
+    );
+  };
+
+  const moveHighlight = (delta: number) => {
+    if (visibleOptions.length === 0) {
+      return;
+    }
+
+    const currentIndex = visibleOptions.findIndex(option => option.value === hoveredOptionValue);
+    const nextIndex = currentIndex === -1
+      ? (delta > 0 ? 0 : visibleOptions.length - 1)
+      : (currentIndex + delta + visibleOptions.length) % visibleOptions.length;
+    setHoveredOptionValue(visibleOptions[nextIndex].value);
   };
 
   const commitEdit = () => {
@@ -329,19 +358,27 @@ function SchemaCell({
     setMode('plain');
     closeDropdown();
     setEditText('');
+    setEditSeed(null);
   };
 
   const cancelEdit = () => {
     setMode('selected');
     closeDropdown();
     setEditText('');
+    setEditSeed(null);
   };
 
   const commitOption = (optionValue: string) => {
+    // Land on "selected" rather than "plain" so the cell keeps focus after a
+    // value is picked and stays keyboard-addressable. Coming from edit mode
+    // this also cancels the editor's pending blur-commit, which would
+    // otherwise overwrite the option with the editor's text.
+    clearBlurTimeout();
     onChange(optionValue);
-    setMode('plain');
+    setMode('selected');
     closeDropdown();
     setEditText('');
+    setEditSeed(null);
   };
 
   useEffect(() => () => clearBlurTimeout(), []);
@@ -356,6 +393,16 @@ function SchemaCell({
     }
   }, [mode]);
 
+  // Arrow-key navigation can move the highlight past the dropdown's 220px
+  // scroll window, so follow it.
+  useEffect(() => {
+    if (!dropdownOpen || hoveredOptionValue === null) {
+      return;
+    }
+
+    optionRefs.current.get(hoveredOptionValue)?.scrollIntoView({ block: 'nearest' });
+  }, [dropdownOpen, hoveredOptionValue]);
+
   useLayoutEffect(() => {
     if (mode !== 'editing' || disabled) {
       return;
@@ -366,7 +413,7 @@ function SchemaCell({
       return;
     }
 
-    editor.textContent = displayValue;
+    editor.textContent = editSeed ?? displayValue;
     editor.focus();
 
     const range = document.createRange();
@@ -433,9 +480,44 @@ function SchemaCell({
         if (disabled || mode === 'editing') {
           return;
         }
-        if (event.key === 'Enter' || event.key === ' ') {
+
+        if (event.key === 'Enter') {
           event.preventDefault();
-          enterEditing();
+          if (!dropdownOpen) {
+            openDropdownForKeyboard();
+          } else if (hoveredOptionValue !== null) {
+            commitOption(hoveredOptionValue);
+          } else {
+            closeDropdown();
+          }
+          return;
+        }
+
+        if (dropdownOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+          event.preventDefault();
+          moveHighlight(event.key === 'ArrowDown' ? 1 : -1);
+          return;
+        }
+
+        if (event.key === 'Escape' && dropdownOpen) {
+          event.preventDefault();
+          closeDropdown();
+          return;
+        }
+
+        if (event.key === 'Delete') {
+          event.preventDefault();
+          closeDropdown();
+          onChange('');
+          return;
+        }
+
+        // Any printable character starts an edit that replaces the cell's
+        // content, the way a spreadsheet does. Modifier combos (copy, paste,
+        // …) are left to the browser.
+        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          enterEditing(event.key);
         }
       }}
     >
@@ -450,6 +532,10 @@ function SchemaCell({
           onInput={event => {
             setEditText(event.currentTarget.textContent ?? '');
             setDropdownOpen(true);
+            // The filter just changed under the highlight, which could leave it
+            // on an option that is no longer listed — and Enter would then
+            // commit something the user can't see.
+            setHoveredOptionValue(null);
           }}
           onPaste={event => {
             event.preventDefault();
@@ -470,9 +556,25 @@ function SchemaCell({
             if (event.key === 'Escape') {
               event.preventDefault();
               cancelEdit();
-            } else if (event.key === 'Enter') {
+              return;
+            }
+
+            // The filtered dropdown navigates exactly like the one opened with
+            // Enter from a selected cell; preventDefault keeps the arrows off
+            // the caret while it's open.
+            if (dropdownOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
               event.preventDefault();
-              commitEdit();
+              moveHighlight(event.key === 'ArrowDown' ? 1 : -1);
+              return;
+            }
+
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              if (dropdownOpen && hoveredOptionValue !== null) {
+                commitOption(hoveredOptionValue);
+              } else {
+                commitEdit();
+              }
             }
           }}
         />
@@ -533,6 +635,9 @@ function SchemaCell({
             <button
               key={option.value}
               type="button"
+              ref={node => {
+                optionRefs.current.set(option.value, node);
+              }}
               style={{
                 ...styles.schemaDropdownOption,
                 ...(option.value === value ? styles.schemaDropdownOptionSelected : null),
