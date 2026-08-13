@@ -19,6 +19,7 @@ import { deleteDatabaseConnection, getDatabaseConnections } from '../services/co
 import type { ConnectionItem } from '../services/connectionsApi';
 import IconHoverCircle from './IconHoverCircle';
 import NewConnectionModal from './NewConnectionModal';
+import NewDatabaseModal from './NewDatabaseModal';
 import NewEndpointModal from './NewEndpointModal';
 import EditServiceModal from './EditServiceModal';
 import SyncEndpointsModal from './SyncEndpointsModal';
@@ -76,6 +77,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   const [pressedEndpointId, setPressedEndpointId] = useState<number | null>(null);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
+  const [databaseModalServiceId, setDatabaseModalServiceId] = useState<number | null>(null);
   const [editingService, setEditingService] = useState<ServiceResponse | null>(null);
   const [connectionModalDatabase, setConnectionModalDatabase] = useState<DatabaseResponse | null>(null);
   const [databaseByService, setDatabaseByService] = useState<Record<number, DatabaseResponse | null | undefined>>({});
@@ -568,6 +570,22 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                 </IconHoverCircle>
                 <DatabaseOutlined style={styles.subSectionIcon} />
                 <span style={styles.subSectionTitle}>Database</span>
+                {/* A service holds at most one database, so the button only
+                    appears once the fetch has confirmed there is none. */}
+                {database === null && (
+                  <Tooltip title="Add Database" placement="bottom">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<PlusOutlined />}
+                      style={styles.subSectionAddBtn}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setDatabaseModalServiceId(service.serviceId);
+                      }}
+                    />
+                  </Tooltip>
+                )}
               </div>
               {dbExpanded && (
                 <div style={styles.subSectionContent}>
@@ -837,6 +855,21 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
           onAdd={endpoints => {
             setEndpointsByService(prev => ({ ...prev, [endpointModalServiceId]: endpoints }));
             setEndpointModalServiceId(null);
+          }}
+        />
+      )}
+
+      {databaseModalServiceId !== null && (
+        <NewDatabaseModal
+          open
+          serviceId={databaseModalServiceId}
+          onClose={() => setDatabaseModalServiceId(null)}
+          onAdd={database => {
+            setDatabaseByService(prev => ({ ...prev, [databaseModalServiceId]: database }));
+            setDatabaseFetchedAtByService(prev => ({ ...prev, [databaseModalServiceId]: Date.now() }));
+            setDatabaseErrorByService(prev => ({ ...prev, [databaseModalServiceId]: null }));
+            setDbExpanded(true);
+            setDatabaseModalServiceId(null);
           }}
         />
       )}

@@ -8,6 +8,12 @@ export interface DatabaseResponse {
   databaseName: string;
 }
 
+export interface DatabaseRequest {
+  databaseType: DatabaseResponse['databaseType'];
+  databaseHost: string;
+  databaseName: string;
+}
+
 export interface ForeignKeyReferenceDto {
   constraintName?: string;
   referencedSchema?: string;
@@ -36,6 +42,14 @@ export async function getServiceDatabase(serviceId: number): Promise<DatabaseRes
 
     throw error;
   }
+}
+
+export async function createServiceDatabase(
+  serviceId: number,
+  payload: DatabaseRequest,
+): Promise<DatabaseResponse> {
+  const response = await apiClient.post<DatabaseResponse>(`/api/v1/services/${serviceId}/database`, payload);
+  return response.data;
 }
 
 export async function getDatabaseSchemas(databaseId: number): Promise<string[]> {
