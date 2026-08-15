@@ -1975,6 +1975,14 @@ function MappingGrid({
     .filter(entry => !selectedFieldPaths.some((selected, otherIndex) => otherIndex !== index && selected === entry.serviceInfo.modelField))
     .map(entry => ({ label: entry.serviceInfo.modelField, value: entry.serviceInfo.modelField }));
 
+  // Response-model fields not yet placed in a row. Blank rows only offer a
+  // dropdown while there is something left to pick, so the grid never shows an
+  // editable cell whose list would come up empty.
+  const unmappedFieldCount = useMemo(() => {
+    const takenFieldPaths = new Set(selectedFieldPaths.filter(Boolean));
+    return leafFieldEntries.filter(entry => !takenFieldPaths.has(entry.serviceInfo.modelField)).length;
+  }, [leafFieldEntries, selectedFieldPaths]);
+
   useEffect(() => {
     const flattenedEntries = mapping ? flattenMappingEntries(mapping.fieldMappings) : [];
 
@@ -2480,7 +2488,12 @@ function MappingGrid({
 
           if (!displayRow) {
             const blankIndex = blankRowIndexForPosition(position);
-            const canEditBlankField = fieldsEditable && viewMode === 'flat' && blankIndex < selectedFieldPaths.length;
+            const canEditBlankField = fieldsEditable
+              && viewMode === 'flat'
+              && blankIndex < selectedFieldPaths.length
+              // One editable blank row per field still available; the rows past
+              // those are padding and stay plain.
+              && position - displayRows.length < unmappedFieldCount;
 
             return (
               <div key={`service-empty-${position}`} style={styles.gridRow}>
