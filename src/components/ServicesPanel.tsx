@@ -20,6 +20,7 @@ import type { ConnectionItem } from '../services/connectionsApi';
 import IconHoverCircle from './IconHoverCircle';
 import NewConnectionModal from './NewConnectionModal';
 import NewDatabaseModal from './NewDatabaseModal';
+import EditDatabaseModal from './EditDatabaseModal';
 import NewEndpointModal from './NewEndpointModal';
 import EditServiceModal from './EditServiceModal';
 import SyncEndpointsModal from './SyncEndpointsModal';
@@ -78,6 +79,10 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
   const [endpointModalServiceId, setEndpointModalServiceId] = useState<number | null>(null);
   const [databaseModalServiceId, setDatabaseModalServiceId] = useState<number | null>(null);
+  const [databaseEditTarget, setDatabaseEditTarget] = useState<{
+    serviceId: number;
+    database: DatabaseResponse;
+  } | null>(null);
   const [editingService, setEditingService] = useState<ServiceResponse | null>(null);
   const [connectionModalDatabase, setConnectionModalDatabase] = useState<DatabaseResponse | null>(null);
   const [databaseByService, setDatabaseByService] = useState<Record<number, DatabaseResponse | null | undefined>>({});
@@ -406,6 +411,11 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
     { key: 'sync-swagger', label: 'Sync with Swagger' },
   ];
 
+  // No Delete: the API exposes only GET/POST/PUT for a service's database.
+  const getDatabaseMenuItems = () => [
+    { key: 'edit', label: 'Edit' },
+  ];
+
   const getConnectionMenuItems = () => [
     { key: 'delete', label: <span style={{ color: 'var(--status-critical)' }}>Delete</span> },
   ];
@@ -570,6 +580,30 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                 </IconHoverCircle>
                 <DatabaseOutlined style={styles.subSectionIcon} />
                 <span style={styles.subSectionTitle}>Database</span>
+                {database && (
+                  <Dropdown
+                    menu={{
+                      items: getDatabaseMenuItems(),
+                      onClick: ({ key, domEvent }) => {
+                        domEvent.stopPropagation();
+
+                        if (key === 'edit') {
+                          setDatabaseEditTarget({ serviceId: service.serviceId, database });
+                        }
+                      },
+                    }}
+                    trigger={['click']}
+                    placement="bottomRight"
+                  >
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<MoreOutlined />}
+                      style={styles.subSectionMenuBtn}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </Dropdown>
+                )}
                 {/* A service holds at most one database, so the button only
                     appears once the fetch has confirmed there is none. */}
                 {database === null && (
@@ -870,6 +904,21 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
             setDatabaseErrorByService(prev => ({ ...prev, [databaseModalServiceId]: null }));
             setDbExpanded(true);
             setDatabaseModalServiceId(null);
+          }}
+        />
+      )}
+
+      {databaseEditTarget !== null && (
+        <EditDatabaseModal
+          open
+          serviceId={databaseEditTarget.serviceId}
+          database={databaseEditTarget.database}
+          onClose={() => setDatabaseEditTarget(null)}
+          onSave={database => {
+            setDatabaseByService(prev => ({ ...prev, [databaseEditTarget.serviceId]: database }));
+            setDatabaseFetchedAtByService(prev => ({ ...prev, [databaseEditTarget.serviceId]: Date.now() }));
+            setDatabaseErrorByService(prev => ({ ...prev, [databaseEditTarget.serviceId]: null }));
+            setDatabaseEditTarget(null);
           }}
         />
       )}
