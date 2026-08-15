@@ -321,6 +321,208 @@
         }
       }
     },
+    "/api/v1/services/{serviceId}/database": {
+      "get": {
+        "tags": [
+          "service-database-controller"
+        ],
+        "summary": "Get the database assigned to a service",
+        "operationId": "getByServiceId_1",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Database found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found or no database assigned",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "service-database-controller"
+        ],
+        "summary": "Update the database assigned to a service",
+        "operationId": "update_1",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Database updated",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found or no database assigned",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "service-database-controller"
+        ],
+        "summary": "Assign a new database to a service",
+        "operationId": "create_1",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Database created and assigned",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Service already has a database assigned",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/endpoints/{endpointId}/mapping": {
       "get": {
         "tags": [
@@ -529,7 +731,7 @@
           "database-connection-controller"
         ],
         "summary": "Update a connection",
-        "operationId": "update_1",
+        "operationId": "update_2",
         "parameters": [
           {
             "name": "databaseId",
@@ -694,7 +896,7 @@
           "service-controller"
         ],
         "summary": "Create a new service",
-        "operationId": "create_1",
+        "operationId": "create_2",
         "requestBody": {
           "content": {
             "application/json": {
@@ -793,138 +995,6 @@
           },
           "500": {
             "description": "Unexpected error or no Swagger endpoint configured",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/{serviceId}/database": {
-      "get": {
-        "tags": [
-          "service-database-controller"
-        ],
-        "summary": "Get the database assigned to a service",
-        "operationId": "getByServiceId_1",
-        "parameters": [
-          {
-            "name": "serviceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Database found",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/DatabaseResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Service not found or no database assigned",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected error",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "service-database-controller"
-        ],
-        "summary": "Assign a new database to a service",
-        "operationId": "create_2",
-        "parameters": [
-          {
-            "name": "serviceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DatabaseRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Database created and assigned",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/DatabaseResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request body",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Service not found",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Service already has a database assigned",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected error",
             "content": {
               "*/*": {
                 "schema": {
@@ -1887,6 +1957,59 @@
           }
         }
       },
+      "DatabaseRequest": {
+        "type": "object",
+        "properties": {
+          "databaseType": {
+            "type": "string",
+            "enum": [
+              "POSTGRESQL",
+              "MYSQL",
+              "ORACLE",
+              "SQL_SERVER"
+            ]
+          },
+          "databaseHost": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 0
+          },
+          "databaseName": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 0
+          }
+        },
+        "required": [
+          "databaseHost",
+          "databaseName",
+          "databaseType"
+        ]
+      },
+      "DatabaseResponse": {
+        "type": "object",
+        "properties": {
+          "databaseId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "databaseType": {
+            "type": "string",
+            "enum": [
+              "POSTGRESQL",
+              "MYSQL",
+              "ORACLE",
+              "SQL_SERVER"
+            ]
+          },
+          "databaseHost": {
+            "type": "string"
+          },
+          "databaseName": {
+            "type": "string"
+          }
+        }
+      },
       "FieldDatabaseInfo": {
         "type": "object",
         "properties": {
@@ -2058,7 +2181,7 @@
           },
           "connectionString": {
             "type": "string",
-            "maxLength": 255,
+            "maxLength": 4096,
             "minLength": 0
           }
         },
@@ -2168,59 +2291,6 @@
             "items": {
               "$ref": "#/components/schemas/EndpointSyncItemResponse"
             }
-          }
-        }
-      },
-      "DatabaseRequest": {
-        "type": "object",
-        "properties": {
-          "databaseType": {
-            "type": "string",
-            "enum": [
-              "POSTGRESQL",
-              "MYSQL",
-              "ORACLE",
-              "SQL_SERVER"
-            ]
-          },
-          "databaseHost": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 0
-          },
-          "databaseName": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 0
-          }
-        },
-        "required": [
-          "databaseHost",
-          "databaseName",
-          "databaseType"
-        ]
-      },
-      "DatabaseResponse": {
-        "type": "object",
-        "properties": {
-          "databaseId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "databaseType": {
-            "type": "string",
-            "enum": [
-              "POSTGRESQL",
-              "MYSQL",
-              "ORACLE",
-              "SQL_SERVER"
-            ]
-          },
-          "databaseHost": {
-            "type": "string"
-          },
-          "databaseName": {
-            "type": "string"
           }
         }
       },
