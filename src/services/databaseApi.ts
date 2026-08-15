@@ -52,6 +52,14 @@ export async function createServiceDatabase(
   return response.data;
 }
 
+export async function updateServiceDatabase(
+  serviceId: number,
+  payload: DatabaseRequest,
+): Promise<DatabaseResponse> {
+  const response = await apiClient.put<DatabaseResponse>(`/api/v1/services/${serviceId}/database`, payload);
+  return response.data;
+}
+
 export async function getDatabaseSchemas(databaseId: number): Promise<string[]> {
   const response = await apiClient.get<string[]>(`/api/v1/databases/${databaseId}/schemas`);
   return response.data ?? [];
