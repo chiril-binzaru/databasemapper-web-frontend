@@ -37,6 +37,18 @@ function getEndpointKey(endpoint: Pick<EndpointItem, 'httpMethod' | 'path'>) {
   return `${endpoint.httpMethod}:${endpoint.path}`;
 }
 
+function toggleId<T>(values: Set<T>, value: T, shouldExpand: boolean): Set<T> {
+  const next = new Set(values);
+
+  if (shouldExpand) {
+    next.add(value);
+  } else {
+    next.delete(value);
+  }
+
+  return next;
+}
+
 // A selected row is tinted with its own method color, so hovering and pressing
 // it deepen that tint rather than switching to the neutral greys an unselected
 // row uses. Methods with no color fall back to the neutral scale throughout.
@@ -69,10 +81,13 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   const endpointsPrefetchRef = useRef<Record<number, Promise<void> | undefined>>({});
   const databasePrefetchRef = useRef<Record<number, Promise<DatabaseResponse | null | undefined> | undefined>>({});
   const connectionsPrefetchRef = useRef<Record<number, Promise<void> | undefined>>({});
-  const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
-  const [dbExpanded, setDbExpanded] = useState(false);
-  const [connectionsExpanded, setConnectionsExpanded] = useState(false);
-  const [endpointsExpanded, setEndpointsExpanded] = useState(false);
+  // Several services can be expanded at once, so each section's expansion is
+  // tracked per owning entity rather than as a single flag: Database and
+  // Endpoints by service, Connections by the database they belong to.
+  const [expandedServiceIds, setExpandedServiceIds] = useState<Set<string>>(new Set());
+  const [dbExpandedServiceIds, setDbExpandedServiceIds] = useState<Set<number>>(new Set());
+  const [connectionsExpandedDatabaseIds, setConnectionsExpandedDatabaseIds] = useState<Set<number>>(new Set());
+  const [endpointsExpandedServiceIds, setEndpointsExpandedServiceIds] = useState<Set<number>>(new Set());
   const [selectedEndpointId, setSelectedEndpointId] = useState<number | null>(null);
   const [hoveredEndpointId, setHoveredEndpointId] = useState<number | null>(null);
   const [pressedEndpointId, setPressedEndpointId] = useState<number | null>(null);
@@ -238,28 +253,28 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   };
 
   const handleServiceClick = (serviceId: string) => {
-    if (expandedServiceId === serviceId) {
-      setExpandedServiceId(null);
-    } else {
-      setExpandedServiceId(serviceId);
-      setDbExpanded(false);
-      setConnectionsExpanded(false);
-      setEndpointsExpanded(false);
+    const willExpand = !expandedServiceIds.has(serviceId);
+    // Collapsing a service leaves its sections as they were, so reopening it
+    // returns to the same place rather than starting from scratch.
+    setExpandedServiceIds(prev => toggleId(prev, serviceId, willExpand));
 
-      const numericServiceId = Number(serviceId);
-      void (async () => {
-        await prefetchEndpoints(numericServiceId);
-        const database = await prefetchDatabase(numericServiceId);
-        if (database?.databaseId) {
-          await prefetchConnections(database.databaseId);
-        }
-      })();
+    if (!willExpand) {
+      return;
     }
+
+    const numericServiceId = Number(serviceId);
+    void (async () => {
+      await prefetchEndpoints(numericServiceId);
+      const database = await prefetchDatabase(numericServiceId);
+      if (database?.databaseId) {
+        await prefetchConnections(database.databaseId);
+      }
+    })();
   };
 
   const handleEndpointsClick = async (serviceId: number) => {
-    const willExpand = !endpointsExpanded;
-    setEndpointsExpanded(willExpand);
+    const willExpand = !endpointsExpandedServiceIds.has(serviceId);
+    setEndpointsExpandedServiceIds(prev => toggleId(prev, serviceId, willExpand));
 
     if (!willExpand) {
       return;
@@ -269,13 +284,14 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   };
 
   const handleDatabaseClick = async (serviceId: number) => {
-    const willExpand = !dbExpanded;
-    setDbExpanded(willExpand);
-    if (!willExpand) {
-      setConnectionsExpanded(false);
-    }
+    const willExpand = !dbExpandedServiceIds.has(serviceId);
+    setDbExpandedServiceIds(prev => toggleId(prev, serviceId, willExpand));
 
     if (!willExpand) {
+      const collapsedDatabaseId = databaseByService[serviceId]?.databaseId;
+      if (collapsedDatabaseId !== undefined) {
+        setConnectionsExpandedDatabaseIds(prev => toggleId(prev, collapsedDatabaseId, false));
+      }
       return;
     }
 
@@ -286,8 +302,8 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
   };
 
   const handleConnectionsClick = async (databaseId: number) => {
-    const willExpand = !connectionsExpanded;
-    setConnectionsExpanded(willExpand);
+    const willExpand = !connectionsExpandedDatabaseIds.has(databaseId);
+    setConnectionsExpandedDatabaseIds(prev => toggleId(prev, databaseId, willExpand));
 
     if (!willExpand) {
       return;
@@ -399,8 +415,8 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
         ...prev,
         [syncModalState.serviceId]: null,
       }));
-      setEndpointsExpanded(true);
-      setExpandedServiceId(String(syncModalState.serviceId));
+      setEndpointsExpandedServiceIds(prev => toggleId(prev, syncModalState.serviceId, true));
+      setExpandedServiceIds(prev => toggleId(prev, String(syncModalState.serviceId), true));
       setSyncModalState(null);
     } finally {
       setSyncCommitLoading(false);
@@ -512,7 +528,9 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
 
   const renderServiceItem = (service: ServiceResponse) => {
     const id = String(service.serviceId);
-    const isExpanded = expandedServiceId === id;
+    const isExpanded = expandedServiceIds.has(id);
+    const isDbExpanded = dbExpandedServiceIds.has(service.serviceId);
+    const isEndpointsExpanded = endpointsExpandedServiceIds.has(service.serviceId);
     const isFavourite = favouriteIds.has(id);
     const database = databaseByService[service.serviceId];
 
@@ -574,7 +592,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                   <RightOutlined
                     style={{
                       ...styles.subChevron,
-                      transform: dbExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transform: isDbExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                     }}
                   />
                 </IconHoverCircle>
@@ -621,7 +639,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                   </Tooltip>
                 )}
               </div>
-              {dbExpanded && (
+              {isDbExpanded && (
                 <div style={styles.subSectionContent}>
                   {databaseLoadingByService[service.serviceId] ? (
                     <span style={styles.emptyHint}>Loading database details...</span>
@@ -653,7 +671,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                             <RightOutlined
                               style={{
                                 ...styles.nestedChevron,
-                                transform: connectionsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                transform: connectionsExpandedDatabaseIds.has(database.databaseId) ? 'rotate(90deg)' : 'rotate(0deg)',
                               }}
                             />
                           </IconHoverCircle>
@@ -672,7 +690,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                             />
                           </Tooltip>
                         </div>
-                        {connectionsExpanded && (
+                        {connectionsExpandedDatabaseIds.has(database.databaseId) && (
                           <div style={styles.nestedSectionContent}>
                             {connectionsLoadingByDatabase[database.databaseId] ? (
                               <span style={styles.emptyHint}>Loading connections...</span>
@@ -753,7 +771,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                   <RightOutlined
                     style={{
                       ...styles.subChevron,
-                      transform: endpointsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transform: isEndpointsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                     }}
                   />
                 </IconHoverCircle>
@@ -795,7 +813,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
                   />
                 </Tooltip>
               </div>
-              {endpointsExpanded && (
+              {isEndpointsExpanded && (
                 <div style={styles.subSectionContent}>
                   {endpointsLoadingByService[service.serviceId] ? (
                     <span style={styles.emptyHint}>Loading endpoints...</span>
@@ -902,7 +920,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
             setDatabaseByService(prev => ({ ...prev, [databaseModalServiceId]: database }));
             setDatabaseFetchedAtByService(prev => ({ ...prev, [databaseModalServiceId]: Date.now() }));
             setDatabaseErrorByService(prev => ({ ...prev, [databaseModalServiceId]: null }));
-            setDbExpanded(true);
+            setDbExpandedServiceIds(prev => toggleId(prev, databaseModalServiceId, true));
             setDatabaseModalServiceId(null);
           }}
         />
@@ -961,7 +979,7 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
               ...prev,
               [connection.databaseId]: null,
             }));
-            setConnectionsExpanded(true);
+            setConnectionsExpandedDatabaseIds(prev => toggleId(prev, connection.databaseId, true));
             setConnectionModalDatabase(null);
           }}
         />
