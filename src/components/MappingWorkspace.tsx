@@ -75,6 +75,43 @@ interface MappingGridRow {
   name: string;
   type: string;
   format: string;
+  kind: MappingFieldEntry['kind'];
+}
+
+// OpenAPI splits a field's type across `type` and `format`, and neither alone
+// is what a reader wants: "integer" hides that it's a 64-bit id, "int64" hides
+// nothing but reads as jargon. The format is the more specific of the two, so
+// it wins where present, mapped to the name the value is usually called by.
+const FORMAT_LABELS: Record<string, string> = {
+  int32: 'int',
+  int64: 'long',
+  float: 'float',
+  double: 'double',
+  date: 'date',
+  'date-time': 'date-time',
+  uuid: 'uuid',
+  byte: 'byte',
+  binary: 'binary',
+  password: 'password',
+};
+
+function formatFieldType(type: string, format: string): string {
+  if (format) {
+    return FORMAT_LABELS[format] ?? format;
+  }
+
+  return type;
+}
+
+// The `[]` / `{}` suffix carries the entry's kind, which is otherwise invisible
+// in the grid: flat mode drops every entry that has children, and a group row
+// shows only its name.
+function getKindTag(kind: MappingFieldEntry['kind']): string | null {
+  if (kind === 'LIST_OF_MODELS' || kind === 'LIST_OF_VALUES') {
+    return '[]';
+  }
+
+  return kind === 'MODEL' ? '{}' : null;
 }
 
 interface SelectedJoinTable {
@@ -1462,7 +1499,15 @@ function getRefName(ref: unknown): string | null {
   return match ? match[1] : null;
 }
 
-function flattenResponseModel(value: unknown): MappingGridRow[] {
+// Only feeds an "is the response model empty?" check, so it stays on a plain
+// shape rather than the grid's row type.
+interface ResponseModelField {
+  name: string;
+  type: string;
+  format: string;
+}
+
+function flattenResponseModel(value: unknown): ResponseModelField[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return [];
   }
@@ -1477,7 +1522,7 @@ function flattenResponseModel(value: unknown): MappingGridRow[] {
     schemaName: string,
     prefix = '',
     visited = new Set<string>(),
-  ): MappingGridRow[] => {
+  ): ResponseModelField[] => {
     if (visited.has(schemaName)) {
       return [];
     }
@@ -1768,9 +1813,38 @@ function getRowsFromMapping(mapping: MappingDto | null): MappingGridRow[] {
     .filter(entry => !entry.fieldMappings || entry.fieldMappings.length === 0)
     .map(entry => ({
       name: entry.serviceInfo.modelField,
-      type: entry.serviceInfo.type ?? '',
+      // A list of scalars stores "array" as its type and the item's format, so
+      // the type column would only repeat what the [] tag already says. Drop it
+      // and let the format name the items.
+      type: entry.kind === 'LIST_OF_VALUES' && entry.serviceInfo.type === 'array'
+        ? ''
+        : entry.serviceInfo.type ?? '',
       format: entry.serviceInfo.format ?? '',
+      kind: entry.kind,
     }));
+}
+
+// Group rows are synthesised from the dotted paths of leaf rows, so the entries
+// they stand for — the only place kind and modelName live — never reach them.
+function getGroupInfoFromMapping(
+  mapping: MappingDto | null,
+): Map<string, { kind: MappingFieldEntry['kind']; modelName: string }> {
+  const groupInfo = new Map<string, { kind: MappingFieldEntry['kind']; modelName: string }>();
+
+  if (!mapping) {
+    return groupInfo;
+  }
+
+  flattenMappingEntries(mapping.fieldMappings)
+    .filter(entry => entry.fieldMappings && entry.fieldMappings.length > 0)
+    .forEach(entry => {
+      groupInfo.set(entry.serviceInfo.modelField, {
+        kind: entry.kind,
+        modelName: entry.serviceInfo.modelName ?? '',
+      });
+    });
+
+  return groupInfo;
 }
 
 type MappingViewMode = 'flat' | 'hierarchical';
@@ -1782,6 +1856,9 @@ interface MappingDisplayRow {
   label: string;
   rowIndex: number | null;
   groupPath: string;
+  // Group rows only: the entry they stand for.
+  entryKind?: MappingFieldEntry['kind'];
+  modelName?: string;
 }
 
 function isPathCollapsedByAncestor(
@@ -1806,6 +1883,7 @@ function buildDisplayRows(
   serviceRows: MappingGridRow[],
   viewMode: MappingViewMode,
   collapsedGroups: Set<string>,
+  groupInfo: Map<string, { kind: MappingFieldEntry['kind']; modelName: string }>,
 ): MappingDisplayRow[] {
   if (viewMode === 'flat') {
     return serviceRows.map((row, index) => ({
@@ -1839,13 +1917,17 @@ function buildDisplayRows(
     for (let i = commonLength; i < parentSegments.length; i += 1) {
       stack.push(parentSegments[i]);
       if (!isPathCollapsedByAncestor(stack, collapsedGroups, false)) {
+        const groupPath = stack.join('.');
+        const info = groupInfo.get(groupPath);
         rows.push({
           kind: 'group',
-          key: `group-${stack.join('.')}`,
+          key: `group-${groupPath}`,
           depth: stack.length - 1,
           label: stack[stack.length - 1],
           rowIndex: null,
-          groupPath: stack.join('.'),
+          groupPath,
+          entryKind: info?.kind,
+          modelName: info?.modelName,
         });
       }
     }
@@ -2310,9 +2392,10 @@ function MappingGrid({
 
   const joins = mapping?.joins ?? [];
 
+  const groupInfo = useMemo(() => getGroupInfoFromMapping(mapping), [mapping]);
   const displayRows = useMemo(
-    () => buildDisplayRows(serviceRows, viewMode, collapsedGroups),
-    [serviceRows, viewMode, collapsedGroups],
+    () => buildDisplayRows(serviceRows, viewMode, collapsedGroups, groupInfo),
+    [serviceRows, viewMode, collapsedGroups, groupInfo],
   );
   const displayRowCount = Math.max(EMPTY_GRID_ROWS, displayRows.length);
 
@@ -2481,7 +2564,6 @@ function MappingGrid({
         <div style={styles.gridHeaderRow}>
           <span style={styles.gridHeaderCell}>Field</span>
           <span style={styles.gridHeaderCell}>Type</span>
-          <span style={styles.gridHeaderCell}>Format</span>
         </div>
         {Array.from({ length: displayRowCount }).map((_, position) => {
           const displayRow = displayRows[position];
@@ -2510,7 +2592,6 @@ function MappingGrid({
                   <span style={styles.gridCellText} />
                 )}
                 <span style={styles.gridCellText} />
-                <span style={styles.gridCellTextMuted} />
               </div>
             );
           }
@@ -2536,9 +2617,11 @@ function MappingGrid({
                     />
                   </IconHoverCircle>
                   <span style={styles.hierarchyGroupLabel}>{displayRow.label}</span>
+                  {displayRow.entryKind && (
+                    <span style={styles.kindTag}>{getKindTag(displayRow.entryKind)}</span>
+                  )}
                 </button>
-                <span style={styles.gridCellText} />
-                <span style={styles.gridCellTextMuted} />
+                <span style={styles.gridCellTextMuted}>{displayRow.modelName ?? ''}</span>
               </div>
             );
           }
@@ -2556,6 +2639,9 @@ function MappingGrid({
                     options={getFieldOptionsForIndex(rowIndex)}
                     disabled={false}
                     onChange={value => handleFieldCellChange(rowIndex, value)}
+                    suffix={row?.kind === 'LIST_OF_VALUES'
+                      ? <span style={styles.kindTag}>[]</span>
+                      : undefined}
                   />
                 </span>
               ) : (
@@ -2566,10 +2652,12 @@ function MappingGrid({
                   }}
                 >
                   {viewMode === 'hierarchical' ? displayRow.label : row?.name ?? ''}
+                  {row?.kind === 'LIST_OF_VALUES' && <span style={styles.kindTag}>[]</span>}
                 </span>
               )}
-              <span style={styles.gridCellText}>{row?.type ?? ''}</span>
-              <span style={styles.gridCellTextMuted}>{row?.format ?? ''}</span>
+              <span style={styles.gridCellText}>
+                {row ? formatFieldType(row.type, row.format) : ''}
+              </span>
             </div>
           );
         })}
@@ -3227,7 +3315,7 @@ const styles: Record<string, CSSProperties> = {
   },
   gridHeaderRow: {
     display: 'grid',
-    gridTemplateColumns: '1.4fr 0.8fr 1fr',
+    gridTemplateColumns: '1.8fr 1.4fr',
     height: 38,
     borderBottom: '1px solid rgba(255,255,255,0.08)',
     background: '#202020',
@@ -3246,7 +3334,7 @@ const styles: Record<string, CSSProperties> = {
   },
   gridRow: {
     display: 'grid',
-    gridTemplateColumns: '1.4fr 0.8fr 1fr',
+    gridTemplateColumns: '1.8fr 1.4fr',
     height: 40,
     borderBottom: '1px solid rgba(255,255,255,0.05)',
   },
@@ -3269,6 +3357,14 @@ const styles: Record<string, CSSProperties> = {
     padding: '0 12px',
     borderRight: '1px solid rgba(255,255,255,0.06)',
     background: 'rgba(255,255,255,0.01)',
+  },
+  kindTag: {
+    marginLeft: 6,
+    flexShrink: 0,
+    color: 'rgba(255,255,255,0.42)',
+    fontFamily: 'monospace',
+    fontSize: 11,
+    letterSpacing: '0.02em',
   },
   gridCellText: {
     display: 'flex',
