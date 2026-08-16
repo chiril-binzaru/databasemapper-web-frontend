@@ -9,7 +9,7 @@ import {
   StarFilled,
   PlusOutlined,
 } from '@ant-design/icons';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getServices, deleteService } from '../services/servicesApi';
 import type { ServiceResponse } from '../services/servicesApi';
@@ -312,8 +312,38 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
     await prefetchConnections(databaseId);
   };
 
+  const showSyncError = (title: string, content: ReactNode) => {
+    modal.error({
+      title,
+      content,
+      centered: true,
+      okText: 'Ok',
+      okButtonProps: {
+        type: 'primary',
+        size: 'small',
+        style: {
+          boxShadow: 'none',
+        },
+      },
+    });
+  };
+
   const handleSyncWithSwagger = async (service: ServiceResponse) => {
     if (syncLoadingByService[service.serviceId]) {
+      return;
+    }
+
+    // The endpoint answers 500 for a service with no Swagger endpoint
+    // configured, which is indistinguishable from a real failure. We know the
+    // service here, so say what is actually wrong instead of asking.
+    if (!service.swaggerEndpoint) {
+      showSyncError(
+        'Sync with Swagger',
+        <span>
+          No Swagger endpoint is configured for service <strong>{service.serviceName}</strong>.
+          Set one through Edit before syncing.
+        </span>,
+      );
       return;
     }
 
@@ -360,6 +390,14 @@ export default function ServicesPanel({ onOpenMapping }: ServicesPanelProps) {
         syncStatus,
         endpoints: response.endpoints ?? [],
       });
+    } catch {
+      showSyncError(
+        'Sync with Swagger',
+        <span>
+          Failed to sync endpoints for service <strong>{service.serviceName}</strong>.
+          Check that the server is running and that the Swagger endpoint is reachable.
+        </span>,
+      );
     } finally {
       setSyncLoadingByService(prev => ({ ...prev, [service.serviceId]: false }));
     }
