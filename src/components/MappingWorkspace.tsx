@@ -293,6 +293,7 @@ type SchemaCellMode = 'plain' | 'selected' | 'editing';
 function SchemaCell({
   value,
   disabled,
+  locked = false,
   options,
   onChange,
   onOpenDropdown,
@@ -305,6 +306,10 @@ function SchemaCell({
 }: {
   value: string;
   disabled: boolean;
+  // Fixed value with nothing to choose from — inert like `disabled`, but not a
+  // refusal: no arrow, and the cursor stays as it is rather than turning into
+  // "not-allowed" every time it crosses the column.
+  locked?: boolean;
   options: Array<{ label: string; value: string }>;
   onChange: (value: string) => void;
   onOpenDropdown?: () => void;
@@ -315,6 +320,7 @@ function SchemaCell({
   fillPreview?: boolean;
   optionsLoading?: boolean;
 }) {
+  const isInert = disabled || locked;
   const [mode, setMode] = useState<SchemaCellMode>('plain');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editText, setEditText] = useState('');
@@ -441,7 +447,7 @@ function SchemaCell({
   }, [dropdownOpen, hoveredOptionValue]);
 
   useLayoutEffect(() => {
-    if (mode !== 'editing' || disabled) {
+    if (mode !== 'editing' || isInert) {
       return;
     }
 
@@ -465,7 +471,7 @@ function SchemaCell({
   }, [mode, disabled]);
 
   const handleArrowClick = () => {
-    if (disabled) {
+    if (isInert) {
       return;
     }
 
@@ -485,24 +491,25 @@ function SchemaCell({
   return (
     <div
       ref={cellRef}
-      role={disabled ? undefined : 'button'}
-      tabIndex={disabled ? -1 : 0}
+      role={isInert ? undefined : 'button'}
+      tabIndex={isInert ? -1 : 0}
       style={{
         ...styles.schemaCellButton,
         ...(variant === 'outlined' ? styles.schemaCellButtonOutlined : null),
         ...(disabled ? styles.schemaCellButtonDisabled : null),
+        ...(locked ? styles.schemaCellButtonLocked : null),
         ...(mode === 'selected' ? styles.schemaCellButtonSelected : null),
         ...(mode === 'editing' ? styles.schemaCellButtonEditing : null),
         ...(fillPreview ? styles.schemaCellButtonFillPreview : null),
       }}
       onClick={() => {
-        if (disabled || mode === 'editing') {
+        if (isInert || mode === 'editing') {
           return;
         }
         enterSelected();
       }}
       onDoubleClick={() => {
-        if (disabled) {
+        if (isInert) {
           return;
         }
         enterEditing();
@@ -514,7 +521,7 @@ function SchemaCell({
         }, 0);
       }}
       onKeyDown={event => {
-        if (disabled || mode === 'editing') {
+        if (isInert || mode === 'editing') {
           return;
         }
 
@@ -558,7 +565,7 @@ function SchemaCell({
         }
       }}
     >
-      {mode === 'editing' && !disabled ? (
+      {mode === 'editing' && !isInert ? (
         <div
           ref={editorRef}
           contentEditable
@@ -628,30 +635,32 @@ function SchemaCell({
         </span>
       )}
       {suffix}
-      <button
-        type="button"
-        style={styles.schemaCellArrowButton}
-        tabIndex={-1}
-        onMouseDown={event => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onMouseEnter={() => setArrowHovered(true)}
-        onMouseLeave={() => setArrowHovered(false)}
-        onClick={event => {
-          event.stopPropagation();
-          handleArrowClick();
-        }}
-      >
-        <span
-          style={{
-            ...styles.schemaCellArrowHoverCircle,
-            ...(arrowHovered ? styles.schemaCellArrowHoverCircleActive : null),
+      {!locked && (
+        <button
+          type="button"
+          style={styles.schemaCellArrowButton}
+          tabIndex={-1}
+          onMouseDown={event => {
+            event.preventDefault();
+            event.stopPropagation();
           }}
-        />
-        <ChevronDown size={14} strokeWidth={1.8} style={{ position: 'relative' }} />
-      </button>
-      {showFillHandle && mode === 'selected' && !disabled && (
+          onMouseEnter={() => setArrowHovered(true)}
+          onMouseLeave={() => setArrowHovered(false)}
+          onClick={event => {
+            event.stopPropagation();
+            handleArrowClick();
+          }}
+        >
+          <span
+            style={{
+              ...styles.schemaCellArrowHoverCircle,
+              ...(arrowHovered ? styles.schemaCellArrowHoverCircleActive : null),
+            }}
+          />
+          <ChevronDown size={14} strokeWidth={1.8} style={{ position: 'relative' }} />
+        </button>
+      )}
+      {showFillHandle && mode === 'selected' && !isInert && (
         <div
           style={styles.schemaFillHandle}
           onMouseDown={event => {
@@ -1999,6 +2008,7 @@ function MappingGrid({
   schemasStatus,
   schemas,
   schemasError,
+  databaseType,
   tablesBySchema,
   tablesStatusBySchema,
   tablesErrorBySchema,
@@ -2017,6 +2027,7 @@ function MappingGrid({
   schemasStatus: MappingWorkspaceTab['schemasStatus'];
   schemas: string[];
   schemasError: string | null;
+  databaseType: DatabaseResponse['databaseType'] | null;
   tablesBySchema: MappingWorkspaceTab['tablesBySchema'];
   tablesStatusBySchema: MappingWorkspaceTab['tablesStatusBySchema'];
   tablesErrorBySchema: MappingWorkspaceTab['tablesErrorBySchema'];
@@ -2053,6 +2064,16 @@ function MappingGrid({
   );
   const fieldsEditable = responseModelStatus === 'ready';
 
+  // With a single schema there is no choice to make, so the cell is filled and
+  // locked rather than left for the user to pick on every row. MySQL always
+  // lands here — the backend reports its database as the one schema — but the
+  // rule is about the count, not the engine, so a single-schema Postgres
+  // behaves the same. Locking is what makes filling safe: an editable cell
+  // refilled by this rule could never be cleared.
+  const lockedSchema = schemas.length === 1 ? schemas[0] : null;
+  // MySQL has no schema layer; what sits in this column is the database.
+  const schemaColumnLabel = databaseType === 'MYSQL' ? 'Database' : 'Schema';
+
   const getFieldOptionsForIndex = (index: number) => leafFieldEntries
     .filter(entry => !selectedFieldPaths.some((selected, otherIndex) => otherIndex !== index && selected === entry.serviceInfo.modelField))
     .map(entry => ({ label: entry.serviceInfo.modelField, value: entry.serviceInfo.modelField }));
@@ -2072,13 +2093,16 @@ function MappingGrid({
     // mapping entry, so their local database-side selections (made e.g.
     // while a since-cleared field previously occupied that row) are
     // preserved here rather than reset to blank.
+    // The locked schema is applied here rather than in an effect of its own so
+    // it survives every re-sync, and without emitting a mapping change — a row
+    // with no table or column yet must not become dirty just by existing.
     setSelectedSchemas(previous => Array.from({ length: databaseRowCount }, (_, index) => {
       const row = serviceRows[index];
       if (!row) {
-        return previous[index] ?? '';
+        return lockedSchema ?? previous[index] ?? '';
       }
       const entry = flattenedEntries.find(item => item.serviceInfo.modelField === row.name);
-      return parseColumnPath(entry?.databaseInfo?.columnPath).schema;
+      return parseColumnPath(entry?.databaseInfo?.columnPath).schema || lockedSchema || '';
     }));
 
     setSelectedTables(previous => Array.from({ length: databaseRowCount }, (_, index) => {
@@ -2118,7 +2142,7 @@ function MappingGrid({
     }));
 
     setSelectedFieldPaths(Array.from({ length: databaseRowCount }, (_, index) => serviceRows[index]?.name ?? ''));
-  }, [databaseRowCount, mapping, serviceRows]);
+  }, [databaseRowCount, lockedSchema, mapping, serviceRows]);
 
   // Resolve options for schemas/tables restored from a persisted mapping so
   // their SchemaCell dropdowns aren't left empty (which would otherwise make
@@ -2670,7 +2694,7 @@ function MappingGrid({
           <span>Database</span>
         </div>
         <div style={styles.databaseGridHeaderRow}>
-          <span style={styles.gridHeaderCell}>Schema</span>
+          <span style={styles.gridHeaderCell}>{schemaColumnLabel}</span>
           <span style={styles.gridHeaderCell}>Table</span>
           <span style={styles.gridHeaderCell}>Column</span>
           <span style={styles.gridHeaderCell}>Type</span>
@@ -2719,8 +2743,9 @@ function MappingGrid({
                   value={selectedSchemas[index] ?? ''}
                   options={schemaOptions}
                   disabled={schemasStatus !== 'ready' || schemas.length === 0}
+                  locked={lockedSchema !== null}
                   onChange={value => handleSchemaCellChange(index, value)}
-                  showFillHandle
+                  showFillHandle={lockedSchema === null}
                   fillPreview={fillDrag?.column === 'schema' && inFillRange}
                   onFillHandleMouseDown={event => startFillDrag('schema', position, index, selectedSchemas[index] ?? '', event)}
                 />
@@ -2908,6 +2933,7 @@ export default function MappingWorkspace({
               responseModel={activeTab.responseModel}
               responseModelStatus={activeTab.responseModelStatus}
               schemasStatus={activeTab.schemasStatus}
+              databaseType={activeTab.database?.databaseType ?? null}
               schemas={activeTab.schemas}
               schemasError={activeTab.schemasError}
               tablesBySchema={activeTab.tablesBySchema}
@@ -2963,6 +2989,7 @@ export default function MappingWorkspace({
               responseModel={activeTab.responseModel}
               responseModelStatus={activeTab.responseModelStatus}
               schemasStatus={activeTab.schemasStatus}
+              databaseType={activeTab.database?.databaseType ?? null}
               schemas={activeTab.schemas}
               schemasError={activeTab.schemasError}
               tablesBySchema={activeTab.tablesBySchema}
@@ -3547,6 +3574,9 @@ const styles: Record<string, CSSProperties> = {
   },
   schemaCellButtonDisabled: {
     cursor: 'not-allowed',
+  },
+  schemaCellButtonLocked: {
+    cursor: 'default',
   },
   schemaCellLabel: {
     flex: '1 1 auto',
