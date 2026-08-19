@@ -161,6 +161,15 @@ export default function NewServiceModal({ open, onClose, onAdd }: NewServiceModa
                     setSwaggerDropdownOpen(false);
                   },
                 }}
+                // Picking an option must not blur the input: the blur handler
+                // closes the menu on a timer, and a press that outlives it
+                // unmounts the item before mouseup, so no click is ever
+                // produced. Touchpad tap-to-click hits this routinely because
+                // libinput holds the button down to see whether the tap turns
+                // into a drag.
+                popupRender={menuNode => (
+                  <div onMouseDown={event => event.preventDefault()}>{menuNode}</div>
+                )}
                 trigger={[]}
               >
                 <Input
