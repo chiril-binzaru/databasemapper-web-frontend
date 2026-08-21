@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Modal, Input, Button, Select, ConfigProvider } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import { ChevronDown } from 'lucide-react';
 import type { CSSProperties } from 'react';
+import IconHoverCircle from './IconHoverCircle';
 import PostgresIcon from '../assets/db/postgresql_icon.svg?react';
 import MySQLIcon from '../assets/db/mysql_icon.svg?react';
 import OracleIcon from '../assets/db/oracle_icon.svg?react';
@@ -124,6 +126,15 @@ export default function EditDatabaseModal({
                 style={{ width: '100%' }}
                 popupMatchSelectWidth
                 disabled={loading}
+                // Matches the mapping grid's cells: the same chevron, and the
+                // same circle behind it on hover. antd's arrow slot is
+                // pointer-events: none, so the circle needs them back to see
+                // the cursor at all.
+                suffixIcon={(
+                  <IconHoverCircle circleSize={25} style={{ pointerEvents: 'auto' }}>
+                    <ChevronDown size={14} strokeWidth={1.8} />
+                  </IconHoverCircle>
+                )}
                 optionRender={option => {
                   const type = DATABASE_TYPES.find(t => t.value === option.value);
                   return (
