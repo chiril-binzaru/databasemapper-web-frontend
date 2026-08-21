@@ -243,6 +243,9 @@ function getScopesFromMapping(
 }
 
 const TABLE_CARD_WIDTH = 230;
+// Scope, the two add-table dropdowns and the add button sit on one line and
+// have to read as a single row of controls.
+const JOIN_CONTROL_HEIGHT = 30;
 const JOIN_TABLE_GAP = 28;
 const JOIN_TABLE_MARGIN = 24;
 const JOIN_TABLE_MAX_PER_ROW = 4;
@@ -1328,35 +1331,40 @@ function JoinsEditor({
           />
         </div>
         <div style={styles.joinAddTableRow}>
-          <SchemaCell
-            value={addTableSchema}
-            options={schemaOptions}
-            disabled={schemasStatus !== 'ready' || schemas.length === 0}
-            variant="outlined"
-            onChange={value => {
-              setAddTableSchema(value);
-              setAddTableTable('');
-              if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
-                onLoadTables(endpointId, value);
-              }
-            }}
-          />
-          <SchemaCell
-            value={addTableTable}
-            options={(tablesBySchema[addTableSchema] ?? []).map(t => ({ label: t, value: t }))}
-            disabled={!addTableSchema}
-            variant="outlined"
-            onOpenDropdown={() => {
-              if (addTableSchema && (tablesStatusBySchema[addTableSchema] ?? 'idle') === 'idle') {
-                onLoadTables(endpointId, addTableSchema);
-              }
-            }}
-            onChange={setAddTableTable}
-          />
+          <span style={styles.joinAddTableSchemaControl}>
+            <SchemaCell
+              value={addTableSchema}
+              options={schemaOptions}
+              disabled={schemasStatus !== 'ready' || schemas.length === 0}
+              variant="outlined"
+              onChange={value => {
+                setAddTableSchema(value);
+                setAddTableTable('');
+                if (value && (tablesStatusBySchema[value] ?? 'idle') === 'idle') {
+                  onLoadTables(endpointId, value);
+                }
+              }}
+            />
+          </span>
+          <span style={styles.joinAddTableTableControl}>
+            <SchemaCell
+              value={addTableTable}
+              options={(tablesBySchema[addTableSchema] ?? []).map(t => ({ label: t, value: t }))}
+              disabled={!addTableSchema}
+              variant="outlined"
+              onOpenDropdown={() => {
+                if (addTableSchema && (tablesStatusBySchema[addTableSchema] ?? 'idle') === 'idle') {
+                  onLoadTables(endpointId, addTableSchema);
+                }
+              }}
+              onChange={setAddTableTable}
+            />
+          </span>
           <button
             type="button"
             style={{
               ...styles.joinModalActionButton,
+              ...styles.joinAddTableButton,
               ...(!addTableSchema || !addTableTable ? styles.gridHeaderActionButtonDisabled : null),
             }}
             disabled={!addTableSchema || !addTableTable}
@@ -3804,7 +3812,7 @@ const styles: Record<string, CSSProperties> = {
   },
   scopeSelectTrigger: {
     width: '100%',
-    height: 30,
+    height: JOIN_CONTROL_HEIGHT,
     display: 'flex',
     alignItems: 'center',
     gap: 6,
@@ -3846,7 +3854,23 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'stretch',
     gap: 8,
-    minHeight: 32,
+    height: JOIN_CONTROL_HEIGHT,
+  },
+  // Widths live here rather than on the shared outlined-cell style, which the
+  // join condition editor also uses.
+  joinAddTableSchemaControl: {
+    display: 'flex',
+    width: 168,
+    flexShrink: 0,
+  },
+  joinAddTableTableControl: {
+    display: 'flex',
+    width: 208,
+    flexShrink: 0,
+  },
+  joinAddTableButton: {
+    minWidth: 172,
+    padding: '0 16px',
   },
   joinDiagramSvg: {
     position: 'absolute',
