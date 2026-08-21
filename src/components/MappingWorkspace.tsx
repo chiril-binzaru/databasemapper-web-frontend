@@ -243,6 +243,82 @@ function getScopesFromMapping(
 }
 
 const TABLE_CARD_WIDTH = 230;
+const JOIN_TABLE_GAP = 28;
+const JOIN_TABLE_MARGIN = 24;
+const JOIN_TABLE_MAX_PER_ROW = 4;
+// Card chrome: header, the column list's vertical padding, and one row per
+// column (styles.joinDiagramColumn keeps a 30px minimum).
+const JOIN_TABLE_HEADER_HEIGHT = 34;
+const JOIN_TABLE_LIST_PADDING = 12;
+const JOIN_TABLE_COLUMN_HEIGHT = 30;
+// Columns load per table and on demand, so a table can need placing before its
+// height is knowable. Assume a middling table rather than a flat one.
+const JOIN_TABLE_ASSUMED_COLUMNS = 6;
+
+function estimateJoinTableHeight(columnCount: number): number {
+  const rows = columnCount > 0 ? columnCount : JOIN_TABLE_ASSUMED_COLUMNS;
+  return JOIN_TABLE_HEADER_HEIGHT + JOIN_TABLE_LIST_PADDING + rows * JOIN_TABLE_COLUMN_HEIGHT;
+}
+
+// Places tables that have no position yet into the first grid slot that is
+// actually free, instead of the slot matching their index in the array.
+// scopeTables and extraTables both arrive asynchronously, so a table's index
+// shifts once others load — and an index-derived slot then lands on top of a
+// table that kept the coordinates it was given under the old ordering.
+// Existing positions are always preserved: they may be where the user dragged
+// the table to.
+function placeJoinTables(
+  tables: SelectedJoinTable[],
+  columnCounts: Record<string, number>,
+  placed: Record<string, { x: number; y: number }>,
+): Record<string, { x: number; y: number }> {
+  const heightOf = (tableKey: string) => estimateJoinTableHeight(columnCounts[tableKey] ?? 0);
+  const rowHeight = tables.reduce(
+    (tallest, table) => Math.max(tallest, heightOf(table.key)),
+    0,
+  ) + JOIN_TABLE_GAP;
+
+  const next: Record<string, { x: number; y: number }> = {};
+  const occupied: Array<{ x: number; y: number; height: number }> = [];
+
+  tables.forEach(table => {
+    const existing = placed[table.key];
+    if (existing) {
+      next[table.key] = existing;
+      occupied.push({ ...existing, height: heightOf(table.key) });
+    }
+  });
+
+  const overlapsOccupied = (x: number, y: number, height: number) => occupied.some(rect => (
+    x < rect.x + TABLE_CARD_WIDTH
+    && rect.x < x + TABLE_CARD_WIDTH
+    && y < rect.y + rect.height
+    && rect.y < y + height
+  ));
+
+  tables.forEach(table => {
+    if (next[table.key]) {
+      return;
+    }
+
+    const height = heightOf(table.key);
+
+    // Terminates: every slot walks further down, and there are finitely many
+    // occupied rectangles to clear.
+    for (let slot = 0; ; slot += 1) {
+      const x = JOIN_TABLE_MARGIN + (slot % JOIN_TABLE_MAX_PER_ROW) * (TABLE_CARD_WIDTH + JOIN_TABLE_GAP);
+      const y = JOIN_TABLE_MARGIN + Math.floor(slot / JOIN_TABLE_MAX_PER_ROW) * rowHeight;
+
+      if (!overlapsOccupied(x, y, height)) {
+        next[table.key] = { x, y };
+        occupied.push({ x, y, height });
+        break;
+      }
+    }
+  });
+
+  return next;
+}
 const EDGE_CORNER_RADIUS = 10;
 
 function buildEdgePath(left: JoinEdgePoint, right: JoinEdgePoint): string {
@@ -294,6 +370,8 @@ function SchemaCell({
   value,
   disabled,
   locked = false,
+  focusKey,
+  onTabNext,
   options,
   onChange,
   onOpenDropdown,
@@ -310,6 +388,12 @@ function SchemaCell({
   // refusal: no arrow, and the cursor stays as it is rather than turning into
   // "not-allowed" every time it crosses the column.
   locked?: boolean;
+  // Makes the cell addressable for grid-driven focus moves. The two panes each
+  // render all of their own rows, so DOM order runs down every Field cell
+  // before reaching the first Schema — nothing like the row-wise order a
+  // spreadsheet's Tab implies.
+  focusKey?: string;
+  onTabNext?: () => void;
   options: Array<{ label: string; value: string }>;
   onChange: (value: string) => void;
   onOpenDropdown?: () => void;
@@ -491,6 +575,7 @@ function SchemaCell({
   return (
     <div
       ref={cellRef}
+      data-focus-key={focusKey}
       role={isInert ? undefined : 'button'}
       tabIndex={isInert ? -1 : 0}
       style={{
@@ -514,7 +599,15 @@ function SchemaCell({
         }
         enterEditing();
       }}
-      onFocus={clearBlurTimeout}
+      onFocus={() => {
+        clearBlurTimeout();
+        // Focus can also arrive from a Tab move rather than a click, and a
+        // cell that looks unselected but takes keystrokes is worse than
+        // either state on its own.
+        if (!isInert && mode === 'plain') {
+          enterSelected();
+        }
+      }}
       onBlur={() => {
         blurTimeoutRef.current = window.setTimeout(() => {
           deselect();
@@ -522,6 +615,13 @@ function SchemaCell({
       }}
       onKeyDown={event => {
         if (isInert || mode === 'editing') {
+          return;
+        }
+
+        if (event.key === 'Tab' && !event.shiftKey && onTabNext) {
+          event.preventDefault();
+          closeDropdown();
+          onTabNext();
           return;
         }
 
@@ -864,6 +964,11 @@ function JoinsEditor({
     ...extraTables.filter(t => !scopeTableKeys.has(t.key)),
   ];
   const tablesSignature = allTables.map(t => t.key).join('|');
+  // Column counts drive the estimated card heights the placement uses, so a
+  // table whose columns arrive later can still get a slot that clears it.
+  const columnCountsSignature = allTables
+    .map(t => `${t.key}:${(columnsByTable[t.key] ?? []).length}`)
+    .join('|');
   const allTableKeys = new Set(allTables.map(t => t.key));
 
   const schemaOptions = schemas.map(s => ({ label: s, value: s }));
@@ -944,16 +1049,17 @@ function JoinsEditor({
     }
   }, [scopes.length, selectedScopeIndex]);
 
-  // Initialise / extend table positions when allTables changes
+  // Initialise / extend table positions when the tables or their heights change
   useEffect(() => {
-    setTablePositions(prev => {
-      const next: Record<string, { x: number; y: number }> = {};
-      allTables.forEach((table, index) => {
-        next[table.key] = prev[table.key] ?? { x: 24 + index * (TABLE_CARD_WIDTH + 28), y: 24 };
-      });
-      return next;
+    const columnCounts: Record<string, number> = {};
+    allTables.forEach(table => {
+      columnCounts[table.key] = (columnsByTable[table.key] ?? []).length;
     });
-  }, [tablesSignature]);
+
+    setTablePositions(prev => placeJoinTables(allTables, columnCounts, prev));
+    // allTables and the column counts are tracked through their signatures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tablesSignature, columnCountsSignature]);
 
   // Global drag move / release
   useEffect(() => {
@@ -1269,7 +1375,11 @@ function JoinsEditor({
               style={{
                 ...styles.joinTableCanvasContent,
                 width: Math.max(800, ...allTables.map(t => (tablePositions[t.key]?.x ?? 0) + TABLE_CARD_WIDTH + 60)),
-                height: Math.max(500, ...allTables.map(t => (tablePositions[t.key]?.y ?? 0) + 400)),
+                height: Math.max(500, ...allTables.map(t => (
+                  (tablePositions[t.key]?.y ?? 0)
+                  + estimateJoinTableHeight((columnsByTable[t.key] ?? []).length)
+                  + JOIN_TABLE_MARGIN
+                ))),
               }}
               onClick={selectEdgeFromDiagramClick}
             >
@@ -2416,6 +2526,25 @@ function MappingGrid({
 
   const joins = mapping?.joins ?? [];
 
+  // Tab runs across a row — Field, Schema, Table, Column — then down to the
+  // next row's Field, wrapping at the end of the mapping. Cells that can't be
+  // interacted with are left out, which is what makes the Schema step "if
+  // applicable": a locked or unavailable schema is simply not in the ring.
+  const gridShellRef = useRef<HTMLDivElement | null>(null);
+
+  const focusCell = (focusKey: string) => {
+    gridShellRef.current?.querySelector<HTMLElement>(`[data-focus-key="${focusKey}"]`)?.focus();
+  };
+
+  const focusNextCell = (currentKey: string, order: string[]) => {
+    const currentPosition = order.indexOf(currentKey);
+    if (currentPosition === -1) {
+      return;
+    }
+
+    focusCell(order[(currentPosition + 1) % order.length]);
+  };
+
   const groupInfo = useMemo(() => getGroupInfoFromMapping(mapping), [mapping]);
   const displayRows = useMemo(
     () => buildDisplayRows(serviceRows, viewMode, collapsedGroups, groupInfo),
@@ -2428,6 +2557,37 @@ function MappingGrid({
   // the last real serviceRow, matching how selectedFieldPaths/selectedSchemas
   // are sized (databaseRowCount).
   const blankRowIndexForPosition = (position: number) => serviceRows.length + (position - displayRows.length);
+
+  const schemaCellFocusable = schemasStatus === 'ready' && schemas.length > 0 && lockedSchema === null;
+
+  const tabOrder = useMemo(() => {
+    const order: string[] = [];
+
+    displayRows.forEach(displayRow => {
+      if (displayRow.kind !== 'leaf') {
+        return;
+      }
+
+      const index = displayRow.rowIndex as number;
+      const rowSchema = selectedSchemas[index] ?? '';
+      const rowTable = selectedTables[index] ?? '';
+
+      if (fieldsEditable && viewMode === 'flat') {
+        order.push(`field-${index}`);
+      }
+      if (schemaCellFocusable) {
+        order.push(`schema-${index}`);
+      }
+      if (rowSchema) {
+        order.push(`table-${index}`);
+      }
+      if (rowSchema && rowTable) {
+        order.push(`column-${index}`);
+      }
+    });
+
+    return order;
+  }, [displayRows, fieldsEditable, schemaCellFocusable, selectedSchemas, selectedTables, viewMode]);
 
   // Maps each rendered database-grid row position to the row index used by
   // selectedSchemas/selectedTables/... (null for group headers / trailing
@@ -2569,7 +2729,7 @@ function MappingGrid({
         expanded={mappingSectionExpanded}
         onToggleExpanded={() => setMappingSectionExpanded(value => !value)}
       >
-    <div style={styles.gridShell}>
+    <div ref={gridShellRef} style={styles.gridShell}>
       <div style={styles.gridPane}>
         <div style={styles.gridSectionHeader}>
           <span>Service</span>
@@ -2663,6 +2823,8 @@ function MappingGrid({
                     options={getFieldOptionsForIndex(rowIndex)}
                     disabled={false}
                     onChange={value => handleFieldCellChange(rowIndex, value)}
+                    focusKey={`field-${rowIndex}`}
+                    onTabNext={() => focusNextCell(`field-${rowIndex}`, tabOrder)}
                     suffix={row?.kind === 'LIST_OF_VALUES'
                       ? <span style={styles.kindTag}>[]</span>
                       : undefined}
@@ -2745,6 +2907,8 @@ function MappingGrid({
                   disabled={schemasStatus !== 'ready' || schemas.length === 0}
                   locked={lockedSchema !== null}
                   onChange={value => handleSchemaCellChange(index, value)}
+                  focusKey={`schema-${index}`}
+                  onTabNext={() => focusNextCell(`schema-${index}`, tabOrder)}
                   showFillHandle={lockedSchema === null}
                   fillPreview={fillDrag?.column === 'schema' && inFillRange}
                   onFillHandleMouseDown={event => startFillDrag('schema', position, index, selectedSchemas[index] ?? '', event)}
@@ -2761,6 +2925,8 @@ function MappingGrid({
                     }
                   }}
                   onChange={value => handleTableCellChange(index, value)}
+                  focusKey={`table-${index}`}
+                  onTabNext={() => focusNextCell(`table-${index}`, tabOrder)}
                   showFillHandle
                   fillPreview={fillDrag?.column === 'table' && inFillRange}
                   onFillHandleMouseDown={event => startFillDrag('table', position, index, selectedTables[index] ?? '', event)}
@@ -2779,6 +2945,8 @@ function MappingGrid({
                     }
                   }}
                   onChange={value => handleColumnCellChange(index, value)}
+                  focusKey={`column-${index}`}
+                  onTabNext={() => focusNextCell(`column-${index}`, tabOrder)}
                   showFillHandle
                   fillPreview={fillDrag?.column === 'column' && inFillRange}
                   onFillHandleMouseDown={event => startFillDrag('column', position, index, selectedColumn, event)}
