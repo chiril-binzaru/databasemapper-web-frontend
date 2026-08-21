@@ -3686,7 +3686,10 @@ const styles: Record<string, CSSProperties> = {
     width: '100%',
     height: '100%',
     pointerEvents: 'none',
-    zIndex: 1,
+    // Behind the cards: an edge runs between two column rows and crosses
+    // whatever lies between them, so painting it on top draws lines straight
+    // across unrelated tables.
+    zIndex: 0,
     overflow: 'visible',
   },
   joinEdgeHitArea: {
@@ -3720,6 +3723,7 @@ const styles: Record<string, CSSProperties> = {
   },
   joinDiagramTable: {
     position: 'absolute',
+    zIndex: 1,
     width: TABLE_CARD_WIDTH,
     overflow: 'hidden',
     border: '1px solid rgba(255,255,255,0.12)',
