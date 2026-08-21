@@ -1447,7 +1447,9 @@ function JoinsEditor({
                           title="Remove table"
                           onClick={() => removeExtraTable(table.key)}
                         >
-                          <CloseOutlined />
+                          <IconHoverCircle circleSize={20}>
+                            <CloseOutlined />
+                          </IconHoverCircle>
                         </button>
                       )}
                     </div>
