@@ -956,6 +956,8 @@ function JoinsEditor({
   const [selectedScopeIndex, setSelectedScopeIndex] = useState(0);
   const [extraTables, setExtraTables] = useState<SelectedJoinTable[]>([]);
   const [tablePositions, setTablePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [addTableHovered, setAddTableHovered] = useState(false);
+  const [addTablePressed, setAddTablePressed] = useState(false);
   const [addTableSchema, setAddTableSchema] = useState('');
   const [addTableTable, setAddTableTable] = useState('');
 
@@ -1128,6 +1130,8 @@ function JoinsEditor({
         : prev;
     });
   };
+
+  const addTableEnabled = !!addTableSchema && !!addTableTable;
 
   const handleAddTable = () => {
     if (!addTableSchema || !addTableTable) {
@@ -1365,9 +1369,18 @@ function JoinsEditor({
             style={{
               ...styles.joinModalActionButton,
               ...styles.joinAddTableButton,
-              ...(!addTableSchema || !addTableTable ? styles.gridHeaderActionButtonDisabled : null),
+              ...(addTableEnabled && addTableHovered ? styles.joinAddTableButtonHovered : null),
+              ...(addTableEnabled && addTablePressed ? styles.joinAddTableButtonPressed : null),
+              ...(addTableEnabled ? null : styles.gridHeaderActionButtonDisabled),
             }}
-            disabled={!addTableSchema || !addTableTable}
+            disabled={!addTableEnabled}
+            onMouseEnter={() => setAddTableHovered(true)}
+            onMouseLeave={() => {
+              setAddTableHovered(false);
+              setAddTablePressed(false);
+            }}
+            onMouseDown={() => setAddTablePressed(true)}
+            onMouseUp={() => setAddTablePressed(false)}
             onClick={handleAddTable}
           >
             Add to tables space
@@ -3871,6 +3884,22 @@ const styles: Record<string, CSSProperties> = {
   joinAddTableButton: {
     minWidth: 172,
     padding: '0 16px',
+    // Restates the shared style's border colour as a longhand so the hover and
+    // pressed overrides have something to fall back to. Clearing a longhand
+    // whose base only exists inside a `border` shorthand resolves to
+    // currentColor, which would leave a bright border behind on mouse-out.
+    borderColor: 'rgba(255,255,255,0.14)',
+    transition: 'background 0.15s ease, border-color 0.15s ease, color 0.15s ease',
+  },
+  joinAddTableButtonHovered: {
+    background: 'rgba(255,255,255,0.11)',
+    borderColor: 'rgba(255,255,255,0.24)',
+    color: 'rgba(255,255,255,0.92)',
+  },
+  joinAddTableButtonPressed: {
+    background: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(255,255,255,0.3)',
+    color: '#fff',
   },
   joinDiagramSvg: {
     position: 'absolute',
